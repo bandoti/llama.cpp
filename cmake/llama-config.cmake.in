@@ -67,8 +67,8 @@ find_library(llama_LIBRARY llama
     REQUIRED
     HINTS ${LLAMA_LIB_DIR})
 
-set(_llama_link_deps "Threads::Threads" "@GGML_EXTRA_LIBS@")
-set(_llama_transient_defines "@LLAMA_TRANSIENT_DEFINES@ @GGML_TRANSIENT_DEFINES@")
+set(_llama_link_deps "@GGML_LINK_LIBRARIES@")
+set(_llama_transient_defines "@GGML_TRANSIENT_DEFINES@")
 
 add_library(llama UNKNOWN IMPORTED)
 
