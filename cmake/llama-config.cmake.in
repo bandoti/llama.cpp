@@ -70,7 +70,10 @@ find_library(llama_LIBRARY llama
 set(_llama_link_deps "@GGML_LINK_LIBRARIES@")
 set(_llama_transient_defines "@GGML_TRANSIENT_DEFINES@")
 
+add_library(ggml  UNKNOWN IMPORTED)
 add_library(llama UNKNOWN IMPORTED)
+
+target_link_libraries(llama ggml)
 
 set_target_properties(llama
     PROPERTIES
