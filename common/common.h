@@ -206,30 +206,41 @@ struct common_params_vocoder {
     bool use_guide_tokens = false; // enable guide tokens to improve TTS accuracy            // NOLINT
 };
 
-class common_params_tools {
-public:
-    using json = nlohmann::ordered_json;
-    using json_ptr = std::shared_ptr<json>;
-    using tool_choice_t = std::variant<std::string, json_ptr>;
+namespace toolcall {
+    class params {
+    public:
+	using json_ptr = std::shared_ptr<nlohmann::ordered_json>;
+	using tools_t = std::variant<std::string, json_ptr>;
+	using tool_choice_t = std::variant<std::string, json_ptr>;
 
-    common_params_tools(std::string tools  = "",
-                        std::string choice = "auto");
+	params(std::string tools  = "",
+			    std::string choice = "auto");
 
-    common_params_tools(const common_params_tools & other) = default;
-    common_params_tools(common_params_tools && other) noexcept = default;
-    common_params_tools & operator=(const common_params_tools & other) = default;
-    common_params_tools & operator=(common_params_tools && other) noexcept = default;
+	params(const params & other) = default;
+	params(params && other) noexcept = default;
+	params & operator=(const params & other) = default;
+	params & operator=(params && other) noexcept = default;
 
-    void tools(std::string tools);
-    const json * tools() const { return tools_.get(); }
+	operator bool() const {
+	    if (std::holds_alternative<std::string>(tools_)) {
+		return ! std::get<std::string>(tools_).empty();
 
-    void choice(std::string choice);
-    const tool_choice_t & choice() const { return tool_choice_; }
+	    } else {
+		return std::get<json_ptr>(tools_) == nullptr;
+	    }
+	}
 
-private:
-    json_ptr tools_;
-    tool_choice_t tool_choice_;
-};
+	void tools(std::string tools);
+	const tools_t tools() const { return tools_; }
+
+	void choice(std::string choice);
+	const tool_choice_t & choice() const { return tool_choice_; }
+
+    private:
+	tools_t tools_;
+	tool_choice_t tool_choice_;
+    };
+}
 
 struct common_params {
     int32_t n_predict             =    -1; // new tokens to predict
@@ -375,7 +386,7 @@ struct common_params {
     std::string chat_template = "";                                                                         // NOLINT
     bool use_jinja = false;                                                                                 // NOLINT
     bool enable_chat_template = true;
-    common_params_tools jinja_tools;
+    toolcall::params jinja_tools;
 
     std::vector<std::string> api_keys;
 
@@ -671,10 +682,12 @@ struct common_chat_templates {
     std::unique_ptr<common_chat_template> template_tool_use;
 };
 
-struct common_chat_sampling_updater {
-    common_params_sampling * sparams;
-    const llama_vocab      * vocab;
-};
+namespace toolcall {
+    struct sampling_updater {
+	common_params_sampling * sparams;
+	const llama_vocab      * vocab;
+    };
+}
 
 // CPP wrapper for llama_chat_apply_template
 // If the built-in template is not supported, we default to chatml
@@ -684,8 +697,8 @@ std::string common_chat_apply_template(
         const std::vector<common_chat_msg> & chat,
         bool add_ass,
         bool use_jinja,
-        const common_params_tools & tools = common_params_tools(),
-        common_chat_sampling_updater * update_sparams = nullptr);
+        const toolcall::params & tools = toolcall::params(),
+        toolcall::sampling_updater * update_sparams = nullptr);
 
 // Format single message, while taking into account the position of that message in chat history
 std::string common_chat_format_single(
@@ -694,8 +707,8 @@ std::string common_chat_format_single(
         const common_chat_msg & new_msg,
         bool add_ass,
         bool use_jinja,
-        const common_params_tools & tools = common_params_tools(),
-        common_chat_sampling_updater * update_sparams = nullptr);
+        const toolcall::params & tools = toolcall::params(),
+        toolcall::sampling_updater * update_sparams = nullptr);
 
 // Returns an example of formatted chat
 std::string common_chat_format_example(

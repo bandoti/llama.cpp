@@ -1769,20 +1769,21 @@ std::string common_detokenize(const struct llama_vocab * vocab, const std::vecto
 // Chat template utils
 //
 
-common_params_tools::common_params_tools(std::string tools, std::string choice) {
+toolcall::params::params(std::string tools, std::string choice) {
     this->tools(tools);
     this->choice(choice);
 }
 
-void common_params_tools::tools(std::string tools) {
-    if (tools.empty()) {
-        tools_.reset();
-        return;
-    }
+void toolcall::params::tools(std::string tools) {
     try {
-        tools_ = std::make_shared<json>(json::parse(tools));
-        if (! tools_->is_array()) {
-            throw std::invalid_argument("tools must be a valid JSON array");
+        if (tools.empty() /*|| tools.beginswith("mcp+http")*/) {
+            tools_ = std::move(tools);
+
+        } else {
+            tools_ = std::make_shared<json>(json::parse(tools));
+            if (! tools_->is_array()) {
+                throw std::invalid_argument("tools must be a valid JSON array");
+            }
         }
 
     } catch (const json::exception & err) {
@@ -1790,7 +1791,7 @@ void common_params_tools::tools(std::string tools) {
     }
 }
 
-void common_params_tools::choice(std::string choice) {
+void toolcall::params::choice(std::string choice) {
     try {
         if (choice == "auto" || choice == "required" || choice == "none") {
             tool_choice_ = std::move(choice);
@@ -1830,7 +1831,7 @@ bool common_chat_verify_template(const std::string & tmpl, bool use_jinja) {
     return res >= 0;
 }
 
-static void copy_chat_params(const common_chat_params & src, common_chat_sampling_updater * update_sparams)
+static void copy_chat_params(const common_chat_params & src, toolcall::sampling_updater * update_sparams)
 {
     GGML_ASSERT(update_sparams && update_sparams->sparams && update_sparams->vocab);
 
@@ -1873,8 +1874,8 @@ std::string common_chat_apply_template(
         const std::vector<common_chat_msg> & msgs,
         bool add_ass,
         bool use_jinja,
-        const common_params_tools & tools,
-        common_chat_sampling_updater * update_sparams)
+        const toolcall::params & tools,
+        toolcall::sampling_updater * update_sparams)
 {
     const auto & tmpl_selected =
         tools.tools() && tmpl.template_tool_use ? *tmpl.template_tool_use : *tmpl.template_default;
@@ -1896,7 +1897,7 @@ std::string common_chat_apply_template(
             inputs.tool_choice = std::get<std::string>(choice);
 
         } else {
-            auto choice_ptr = std::get<common_params_tools::json_ptr>(choice);
+            auto choice_ptr = std::get<toolcall::params::json_ptr>(choice);
             if (choice_ptr != nullptr) {
                 inputs.tool_choice = *choice_ptr;
             }
@@ -1946,8 +1947,8 @@ std::string common_chat_format_single(
         const common_chat_msg & new_msg,
         bool add_ass,
         bool use_jinja,
-        const common_params_tools & tools,
-        common_chat_sampling_updater * update_sparams)
+        const toolcall::params & tools,
+        toolcall::sampling_updater * update_sparams)
 {
     std::ostringstream ss;
     auto fmt_past_msg = past_msg.empty() ? ""

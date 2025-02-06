@@ -271,7 +271,7 @@ int main(int argc, char ** argv) {
 
         common_chat_msg new_msg{role, content, {}};
 
-        common_chat_sampling_updater updater{&sparams, vocab};
+        toolcalls::sampling_updater updater{&sparams, vocab};
         auto formatted =
             common_chat_format_single(chat_templates, chat_msgs, new_msg, add_ass, g_params->use_jinja,
                                       tools, &updater);
