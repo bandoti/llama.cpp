@@ -4,6 +4,11 @@
 using json = nlohmann::json;
 
 const std::string mcp::JsonRpcVersion = "2.0";
+const std::string mcp::McpVersion = "2024-11-05";
+
+mcp::message::message(std::optional<nlohmann::json> id) : id_(std::move(id))
+{
+}
 
 void mcp::message::id(std::optional<nlohmann::json> id) {
     id_ = std::move(id);
@@ -11,6 +16,14 @@ void mcp::message::id(std::optional<nlohmann::json> id) {
 
 const std::optional<nlohmann::json> & mcp::message::id() const {
     return id_;
+}
+
+mcp::request::request(std::optional<nlohmann::json> id,
+                      std::string method,
+                      std::optional<nlohmann::json> params)
+
+    : message(id), method_(std::move(method)), params_(std::move(params))
+{
 }
 
 json mcp::request::toJson() const override {
@@ -38,6 +51,14 @@ void mcp::request::params(std::optional<nlohmann::json> params) {
 
 const std::optional<nlohmann::json> & mcp::request::params() const {
     return params_;
+}
+
+mcp::response::response(std::optional<nlohmann::json> id,
+                        std::optional<nlohmann::json> result = std::nullopt,
+                        std::optional<error> error = std::nullopt)
+
+    : message(id), result_(result), error_(error)
+{
 }
 
 json mcp::response::error::toJson() const {
@@ -76,6 +97,14 @@ void mcp::response::error(std::optional<mcp::response::error> error) {
 
 const std::optional<mcp::response::error> & mcp::response::error() const {
     return error_;
+}
+
+mcp::notification::notification(std::optional<nlohmann::json> id,
+             std::string method,
+             std::optional<nlohmann::json> params = std::nullopt)
+
+    : message(id), method_(method), params_(params)
+{
 }
 
 json mcp::notification::toJson() const override {

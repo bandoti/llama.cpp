@@ -4,10 +4,13 @@
 
 namespace mcp
 {
-    static const std::string JsonRpcVersion;
+    extern const std::string JsonRpcVersion;
+    extern const std::string McpVersion;
 
     class message {
     public:
+        message(std::optional<nlohmann::json> id = std::nullopt);
+
         virtual ~message() = default;
         virtual nlohmann::json toJson() const = 0;
 
@@ -21,6 +24,10 @@ namespace mcp
 
     class request : public message {
     public:
+        request(std::optional<nlohmann::json> id,
+                std::string method,
+                std::optional<nlohmann::json> params = std::nullopt);
+
         virtual ~request() = default;
         nlohmann::json toJson() const override;
 
@@ -44,6 +51,11 @@ namespace mcp
             std::optional<nlohmann::json> data;
             nlohmann::json toJson() const;
         };
+
+        response(std::optional<nlohmann::json> id,
+                 std::optional<nlohmann::json> result = std::nullopt,
+                 std::optional<error> error = std::nullopt);
+
         virtual ~response() = default;
         virtual nlohmann::json toJson() const override;
 
@@ -61,6 +73,10 @@ namespace mcp
 
     class notification : public message {
     public:
+        notification(std::optional<nlohmann::json> id,
+                     std::string method,
+                     std::optional<nlohmann::json> params = std::nullopt);
+
         virtual ~notification() = default;
         virtual nlohmann::json toJson() const override;
 
@@ -92,8 +108,6 @@ namespace mcp
 
     class initialize_request : public request {
     private:
-        std::string id;
-        std::string protocolVersion;
         client_capabilities capabilities;
         client_info clientInfo;
 
