@@ -170,59 +170,82 @@ mcp::initialize_request::initialize_request(nlohmann::json id, capabilities caps
     params(params);
 }
 
-json mcp::server_capabilities::toJson() const {
-    return json{
-        {"resourceSubscriptions", resourceSubscriptions},
-        {"toolSupport", toolSupport},
-        {"promptTemplates", promptTemplates}
-    };
+mcp::initialize_response::initialize_response(
+    nlohmann::json id, std::string name, std::string version, std::string protoVersion,
+    capabilities caps)
+    : response(id), name_(std::move(name)), version_(std::move(version)),
+      protoVersion_(std::move(protoVersion)), caps_(std::move(caps))
+{
+    json params;
+    params["protocolVersion"] = protoVersion;
+    params["clientInfo"]["name"] = name;
+    params["clientInfo"]["version"] = version;
+    params["capabilities"] = {};
+
+    for (auto cap = caps.cbegin(); cap != caps.cend(); ++cap) {
+        json cap_json;
+
+        if (cap->subscribe) {
+            cap_json["subscribe"] = true;
+        }
+        if (cap->listChanged) {
+            cap_json["listChanged"] = true;
+        }
+
+        params["capabilities"][cap->name] = cap_json;
+    }
+
+    params(params);
+
 }
 
-mcp::server_capabilities mcp::server_capabilities::fromJson(const json& j) {
-    mcp::server_capabilities caps;
-    if (j.contains("resourceSubscriptions"))
-        caps.resourceSubscriptions = j.at("resourceSubscriptions").get<bool>();
-
-    if (j.contains("toolSupport"))
-        caps.toolSupport = j.at("toolSupport").get<bool>();
-
-    if (j.contains("promptTemplates"))
-        caps.promptTemplates = j.at("promptTemplates").get<bool>();
-
-    return caps;
+void mcp::initialize_response::name(std::string name) {
+    name_ = std::move(name);
 }
 
-json mcp::server_info::toJson() const {
-    return json{
-        {"name", name},
-        {"version", version}
-    };
+const std::string & mcp::initialize_response::name() const {
+    return name_;
 }
 
-mcp::server_info mcp::server_info::fromJson(const json& j) {
-    mcp::server_info info;
-    if (j.contains("name"))
-        info.name = j.at("name").get<std::string>();
-
-    if (j.contains("version"))
-        info.version = j.at("version").get<std::string>();
-
-    return info;
+void mcp::initialize_response::version(std::string version) {
+    version_ = std::move(version);
 }
 
-std::optional<json> mcp::initialize_response::getResult() const override {
-    return json{
-        {"protocolVersion", protocolVersion},
-        {"capabilities", capabilities.toJson()},
-        {"serverInfo", serverInfo.toJson()}
-    };
+const std::string & mcp::initialize_response::version() const {
+    return version_;
 }
 
-mcp::initialize_response mcp::initialize_response::fromJson(const json& j) {
-    return mcp::initialize_response(
-        j.at("id").get<std::string>(),
-        j.at("result").at("protocolVersion").get<std::string>(),
-        mcp::server_capabilities::fromJson(j.at("result").at("capabilities")),
-        mcp::server_info::fromJson(j.at("result").at("serverInfo"))
-        );
+void mcp::initialize_response::protoVersion(std::string protoVersion) {
+    protoVersion_ = std::move(protoVersion);
+}
+
+const std::string & mcp::initialize_response::protoVersion() const {
+    return protoVersion_;
+}
+
+void mcp::initialize_response::capabilities(capabilities caps) {
+    caps_ = std::move(caps);
+}
+
+const mcp::initialize_response::capabilities & mcp::initialize_response::capabilities() const {
+    return caps_;
+}
+
+mcp::initialize_response mcp::initialize_response::fromJson(const nlohmann::json& j) {
+    std::string name = j["result"]["serverInfo"]["name"];
+    std::string version = j["result"]["serverInfo"]["version"];
+    std::string protoVersion = j["result"]["protocolVersion"];
+
+    capabilities caps;
+    if (j["result"].contains("capabilities")) {
+        for (const auto& [key, value] : j["result"]["capabilities"].items()) {
+            capability cap;
+            cap.name = key;
+            cap.subscribe = value.value("subscribe", false);
+            cap.listChanged = value.value("listChanged", false);
+            caps.push_back(cap);
+        }
+    }
+
+    return initialize_response(j["id"], name, version, protoVersion, caps);
 }

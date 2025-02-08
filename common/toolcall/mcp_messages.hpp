@@ -1,5 +1,6 @@
 #include <string>
 #include <optional>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace mcp
@@ -99,6 +100,7 @@ namespace mcp
         bool listChanged = false;
     };
 
+
     class initialize_request : public request {
     public:
         using capabilities = std::vector<capability>;
@@ -108,37 +110,36 @@ namespace mcp
         capabilities caps_;
     };
 
-    struct server_info {
-        std::string name;
-        std::string version;
-
-        nlohmann::json toJson() const;
-        static server_info fromJson(const json& j);
-    };
-
 
     class initialize_response : public response {
-    private:
-        std::string id;
-        std::string protocolVersion;
-        server_capabilities capabilities;
-        server_info serverInfo;
-
     public:
-        initialize_response(std::string responseId,
-                                std::string version,
-                                server_capabilities caps,
-                                server_info info)
+        using capabilities = std::vector<capability>;
 
-            : id(std::move(responseId)),
-              protocolVersion(std::move(version)),
-              capabilities(std::move(caps)),
-              serverInfo(std::move(info))
-            {}
+        initialize_response(nlohmann::json id,
+                            std::string name,
+                            std::string version,
+                            std::string protoVersion,
+                            capabilities caps);
 
-        nlohmann::json getId() const override { return id; }
-        std::optional<json> getResult() const override;
+        void name(std::string name);
+        const std::string & name() const;
+
+        void version(std::String version);
+        const std::string version() const;
+
+        void protoVersion(std::string protoVersion);
+        const std::string & protoVersion() const;
+
+        void capabilities(capabilities capabilities);
+        const capabilities & capabilities() const;
+
         static initialize_response fromJson(const json& j);
+
+    private:
+        std::string name_;
+        std::string version_;
+        std::string protoVersion_;
+        server_capabilities caps_;
     };
 
 
