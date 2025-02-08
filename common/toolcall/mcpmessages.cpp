@@ -1,0 +1,126 @@
+#include "mcpmessages.hpp"
+#include <iostream>
+
+using json = nlohmann::json;
+
+json mcp_request::toJson() const override {
+    json j;
+    j["jsonrpc"] = getJsonRpcVersion();
+    j["method"] = getMethod();
+    j["id"] = getId();
+    if (getParams()) {
+        j["params"] = getParams().value();
+    }
+    return j;
+}
+
+json mcp_response::error::toJson() const {
+    json j;
+    j["code"] = code;
+    j["message"] = message;
+    if (data) {
+        j["data"] = data.value();
+    }
+    return j;
+}
+
+json mcp_response::toJson() const override {
+    json j;
+    j["jsonrpc"] = getJsonRpcVersion();
+    j["id"] = getId();
+    if (getResult()) {
+        j["result"] = getResult().value();
+    } else if (getError()) {
+        j["error"] = getError()->toJson();
+    }
+    return j;
+}
+
+json mcp_notification::toJson() const override {
+    json j;
+    j["jsonrpc"] = getJsonRpcVersion();
+    j["method"] = getMethod();
+    if (getParams()) {
+        j["params"] = getParams().value();
+    }
+    return j;
+}
+
+json mcp_client_capabilities::toJson() const {
+    return json{
+        {"samplingSupport", samplingSupport},
+        {"notificationHandling", notificationHandling}
+    };
+}
+
+json mcp_client_info::toJson() const {
+    return json{
+        {"name", name},
+        {"version", version}
+    };
+}
+
+std::optional<json> mcp_initialize_request::getParams() const override {
+    return json{
+        {"protocolVersion", protocolVersion},
+        {"capabilities", capabilities.toJson()},
+        {"clientInfo", clientInfo.toJson()}
+    };
+}
+
+json mcp_server_capabilities::toJson() const {
+    return json{
+        {"resourceSubscriptions", resourceSubscriptions},
+        {"toolSupport", toolSupport},
+        {"promptTemplates", promptTemplates}
+    };
+}
+
+mcp_server_capabilities mcp_server_capabilities::fromJson(const json& j) {
+    mcp_server_capabilities caps;
+    if (j.contains("resourceSubscriptions"))
+        caps.resourceSubscriptions = j.at("resourceSubscriptions").get<bool>();
+
+    if (j.contains("toolSupport"))
+        caps.toolSupport = j.at("toolSupport").get<bool>();
+
+    if (j.contains("promptTemplates"))
+        caps.promptTemplates = j.at("promptTemplates").get<bool>();
+
+    return caps;
+}
+
+json mcp_server_info::toJson() const {
+    return json{
+        {"name", name},
+        {"version", version}
+    };
+}
+
+mcp_server_info mcp_server_info::fromJson(const json& j) {
+    mcp_server_info info;
+    if (j.contains("name"))
+        info.name = j.at("name").get<std::string>();
+
+    if (j.contains("version"))
+        info.version = j.at("version").get<std::string>();
+
+    return info;
+}
+
+std::optional<json> mcp_initialize_response::getResult() const override {
+    return json{
+        {"protocolVersion", protocolVersion},
+        {"capabilities", capabilities.toJson()},
+        {"serverInfo", serverInfo.toJson()}
+    };
+}
+
+mcp_initialize_response mcp_initialize_response::fromJson(const json& j) {
+    return mcp_initialize_response(
+        j.at("id").get<std::string>(),
+        j.at("result").at("protocolVersion").get<std::string>(),
+        mcp_server_capabilities::fromJson(j.at("result").at("capabilities")),
+        mcp_server_info::fromJson(j.at("result").at("serverInfo"))
+        );
+}

@@ -1,231 +1,141 @@
-#include <iostream>
 #include <string>
 #include <optional>
 #include <nlohmann/json.hpp>
 
-using json = nlohmann::json;
-
-// ------------------------
-// Base Interfaces
-// ------------------------
-
-class IMessage {
+class mcp_message {
 public:
-    virtual ~IMessage() = default;
+    virtual ~mcp_message() = default;
 
-    virtual std::string getJsonRpcVersion() const { return "2.0"; }
-    virtual json toJson() const = 0;
+    virtual std::string getJsonRpcVersion() const {
+        return "2.0";
+    }
+
+    virtual std::optional<nlohmann::json> getId() const = 0;
+
+    virtual nlohmann::json toJson() const = 0;
 };
 
-class IRequest : public IMessage {
+class mcp_request : public mcp_message {
 public:
-    virtual ~IRequest() = default;
+    virtual ~mcp_request() = default;
 
     virtual std::string getMethod() const = 0;
-    virtual json getId() const = 0;
-    virtual std::optional<json> getParams() const = 0;
+    virtual std::optional<nlohmann::json> getParams() const = 0;
 
-    json toJson() const override {
-        json j;
-        j["jsonrpc"] = getJsonRpcVersion();
-        j["method"] = getMethod();
-        j["id"] = getId();
-        if (getParams()) {
-            j["params"] = getParams().value();
-        }
-        return j;
-    }
+    nlohmann::json toJson() const override;
 };
 
-class IResponse : public IMessage {
+class mcp_response : public mcp_message {
 public:
-    struct Error {
+    struct error {
         int code;
         std::string message;
-        std::optional<json> data;
+        std::optional<nlohmann::json> data;
 
-        json toJson() const {
-            json j;
-            j["code"] = code;
-            j["message"] = message;
-            if (data) {
-                j["data"] = data.value();
-            }
-            return j;
-        }
+        nlohmann::json toJson() const;
     };
 
-    virtual ~IResponse() = default;
+    virtual ~mcp_response() = default;
 
-    virtual json getId() const = 0;
-    virtual std::optional<json> getResult() const = 0;
-    virtual std::optional<Error> getError() const = 0;
+    virtual std::optional<nlohmann::json> getResult() const = 0;
+    virtual std::optional<error> getError() const = 0;
 
-    json toJson() const override {
-        json j;
-        j["jsonrpc"] = getJsonRpcVersion();
-        j["id"] = getId();
-        if (getResult()) {
-            j["result"] = getResult().value();
-        } else if (getError()) {
-            j["error"] = getError()->toJson();
-        }
-        return j;
-    }
+    nlohmann::json toJson() const override;
 };
 
-class INotification : public IMessage {
+class mcp_notification : public mcp_message {
 public:
-    virtual ~INotification() = default;
+    virtual ~mcp_notification() = default;
 
     virtual std::string getMethod() const = 0;
-    virtual std::optional<json> getParams() const = 0;
+    virtual std::optional<nlohmann::json> getParams() const = 0;
 
-    json toJson() const override {
-        json j;
-        j["jsonrpc"] = getJsonRpcVersion();
-        j["method"] = getMethod();
-        if (getParams()) {
-            j["params"] = getParams().value();
-        }
-        return j;
-    }
+    nlohmann::json toJson() const override;
 };
 
-// ------------------------
-// Client Capability Structures
-// ------------------------
-
-struct ClientCapabilities {
+struct mcp_client_capabilities {
     bool samplingSupport = false;
     bool notificationHandling = false;
 
-    json toJson() const {
-        return json{
-            {"samplingSupport", samplingSupport},
-            {"notificationHandling", notificationHandling}
-        };
-    }
+    nlohmann::json toJson() const;
 };
 
-struct ClientInfo {
+struct mcp_client_info {
     std::string name;
     std::string version;
 
-    json toJson() const {
-        return json{
-            {"name", name},
-            {"version", version}
-        };
-    }
+    nlohmann::json toJson() const;
 };
 
-// ------------------------
-// Initialize Request (Client → Server)
-// ------------------------
-
-class InitializeRequest : public IRequest {
+class mcp_initialize_request : public mcp_request {
 private:
     std::string id;
     std::string protocolVersion;
-    ClientCapabilities capabilities;
-    ClientInfo clientInfo;
+    mcp_client_capabilities capabilities;
+    mcp_client_info clientInfo;
 
 public:
-    InitializeRequest(std::string requestId, std::string version, ClientCapabilities caps, ClientInfo info)
-        : id(std::move(requestId)), protocolVersion(std::move(version)), capabilities(std::move(caps)), clientInfo(std::move(info)) {}
+    mcp_initialize_request(std::string requestId,
+                           std::string version,
+                           mcp_client_capabilities caps,
+                           mcp_client_info info)
+
+        : id(std::move(requestId)),
+          protocolVersion(std::move(version)),
+          capabilities(std::move(caps)),
+          clientInfo(std::move(info))
+        {}
 
     std::string getMethod() const override { return "initialize"; }
-    json getId() const override { return id; }
-    std::optional<json> getParams() const override {
-        return json{
-            {"protocolVersion", protocolVersion},
-            {"capabilities", capabilities.toJson()},
-            {"clientInfo", clientInfo.toJson()}
-        };
-    }
+    nlohmann::json getId() const override { return id; }
+    std::optional<json> getParams() const override;
 };
 
-// ------------------------
-// Initialize Response (Server → Client)
-// ------------------------
-
-struct ServerCapabilities {
+struct mcp_server_capabilities {
     bool resourceSubscriptions = false;
     bool toolSupport = false;
     bool promptTemplates = false;
 
-    json toJson() const {
-        return json{
-            {"resourceSubscriptions", resourceSubscriptions},
-            {"toolSupport", toolSupport},
-            {"promptTemplates", promptTemplates}
-        };
-    }
+    nlohmann::json toJson() const;
 
-    static ServerCapabilities fromJson(const json& j) {
-        ServerCapabilities caps;
-        if (j.contains("resourceSubscriptions")) caps.resourceSubscriptions = j.at("resourceSubscriptions").get<bool>();
-        if (j.contains("toolSupport")) caps.toolSupport = j.at("toolSupport").get<bool>();
-        if (j.contains("promptTemplates")) caps.promptTemplates = j.at("promptTemplates").get<bool>();
-        return caps;
-    }
+    static mcp_server_capabilities fromJson(const json& j);
 };
 
-struct ServerInfo {
+struct mcp_server_info {
     std::string name;
     std::string version;
 
-    json toJson() const {
-        return json{
-            {"name", name},
-            {"version", version}
-        };
-    }
+    nlohmann::json toJson() const;
 
-    static ServerInfo fromJson(const json& j) {
-        ServerInfo info;
-        if (j.contains("name")) info.name = j.at("name").get<std::string>();
-        if (j.contains("version")) info.version = j.at("version").get<std::string>();
-        return info;
-    }
+    static mcp_server_info fromJson(const json& j);
 };
 
-class InitializeResponse : public IResponse {
+class mcp_initialize_response : public mcp_response {
 private:
     std::string id;
     std::string protocolVersion;
-    ServerCapabilities capabilities;
-    ServerInfo serverInfo;
+    mcp_server_capabilities capabilities;
+    mcp_server_info serverInfo;
 
 public:
-    InitializeResponse(std::string responseId, std::string version, ServerCapabilities caps, ServerInfo info)
-        : id(std::move(responseId)), protocolVersion(std::move(version)), capabilities(std::move(caps)), serverInfo(std::move(info)) {}
+    mcp_initialize_response(std::string responseId,
+                            std::string version,
+                            mcp_server_capabilities caps,
+                            mcp_server_info info)
 
-    json getId() const override { return id; }
-    std::optional<json> getResult() const override {
-        return json{
-            {"protocolVersion", protocolVersion},
-            {"capabilities", capabilities.toJson()},
-            {"serverInfo", serverInfo.toJson()}
-        };
-    }
+        : id(std::move(responseId)),
+          protocolVersion(std::move(version)),
+          capabilities(std::move(caps)),
+          serverInfo(std::move(info))
+        {}
 
-    static InitializeResponse fromJson(const json& j) {
-        return InitializeResponse(
-            j.at("id").get<std::string>(),
-            j.at("result").at("protocolVersion").get<std::string>(),
-            ServerCapabilities::fromJson(j.at("result").at("capabilities")),
-            ServerInfo::fromJson(j.at("result").at("serverInfo"))
-        );
-    }
+    nlohmann::json getId() const override { return id; }
+    std::optional<json> getResult() const override;
+
+    static mcp_initialize_response fromJson(const json& j);
 };
 
-// ------------------------
-// Initialized Notification (Client → Server)
-// ------------------------
-
-class InitializedNotification : public INotification {
+class mcp_initialized_notification : public mcp_notification {
 public:
     std::string getMethod() const override { return "initialized"; }
     std::optional<json> getParams() const override { return std::nullopt; }
@@ -234,27 +144,27 @@ public:
 // ------------------------
 // Usage Example
 // ------------------------
-
+/*
 int main() {
     // Create client capabilities
-    ClientCapabilities clientCaps;
+    mcp_client_capabilities clientCaps;
     clientCaps.samplingSupport = true;
     clientCaps.notificationHandling = true;
 
     // Create client info
-    ClientInfo clientInfo;
+    mcp_client_info clientInfo;
     clientInfo.name = "MyMCPClient";
     clientInfo.version = "1.0.0";
 
     // Create initialize request
-    InitializeRequest initReq("1", "1.0", clientCaps, clientInfo);
+    mcp_initialize_request initReq("1", "1.0", clientCaps, clientInfo);
 
     // Serialize request to JSON
-    json initReqJson = initReq.toJson();
+    nlohmann::json initReqJson = initReq.toJson();
     std::cout << "Initialize Request JSON:\n" << initReqJson.dump(2) << "\n\n";
 
     // Simulated server response JSON
-    json serverRespJson = R"({
+    nlohmann::json serverRespJson = R"({
         "jsonrpc": "2.0",
         "id": "1",
         "result": {
@@ -272,8 +182,9 @@ int main() {
     })"_json;
 
     // Parse response
-    InitializeResponse initResp = InitializeResponse::fromJson(serverRespJson);
+    mcp_initialize_response initResp = mcp_initialize_response::fromJson(serverRespJson);
     std::cout << "Server Info: " << initResp.toJson().dump(2) << "\n";
 
     return 0;
 }
+*/
