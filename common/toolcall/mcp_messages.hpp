@@ -75,8 +75,7 @@ namespace mcp
 
     class notification : public message {
     public:
-        notification(std::optional<nlohmann::json> id,
-                     std::string method,
+        notification(std::string method,
                      std::optional<nlohmann::json> params = std::nullopt);
 
         virtual ~notification() = default;
@@ -145,8 +144,7 @@ namespace mcp
 
     class initialized_notification : public notification {
     public:
-        std::string getMethod() const override { return "initialized"; }
-        std::optional<json> getParams() const override { return std::nullopt; }
+        initialized_notification();
     };
 }
 

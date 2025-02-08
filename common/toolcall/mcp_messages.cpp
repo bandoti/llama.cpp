@@ -100,11 +100,9 @@ const std::optional<mcp::response::error> & mcp::response::error() const {
     return error_;
 }
 
-mcp::notification::notification(std::optional<nlohmann::json> id,
-             std::string method,
-             std::optional<nlohmann::json> params = std::nullopt)
-
-    : message(id), method_(method), params_(params)
+mcp::notification::notification(
+    std::string method, std::optional<nlohmann::json> params = std::nullopt)
+    : message(), method_(method), params_(params)
 {
 }
 
@@ -248,4 +246,9 @@ mcp::initialize_response mcp::initialize_response::fromJson(const nlohmann::json
     }
 
     return initialize_response(j["id"], name, version, protoVersion, caps);
+}
+
+mcp::initialized_notification::initialized_notification()
+    : notification("notifications/initialized")
+{
 }
