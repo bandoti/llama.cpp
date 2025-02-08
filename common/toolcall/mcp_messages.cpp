@@ -4,7 +4,8 @@
 using json = nlohmann::json;
 
 const std::string mcp::JsonRpcVersion = "2.0";
-const std::string mcp::McpVersion = "2024-11-05";
+const std::string mcp::McpVersion     = "2024-11-05";
+const std::string mcp::ClientVersion  = "1.0.0";
 
 mcp::message::message(std::optional<nlohmann::json> id) : id_(std::move(id))
 {
@@ -133,26 +134,40 @@ const std::optional<nlohmann::json> & mcp::notification::params() const {
     return params_;
 }
 
-json mcp::client_capabilities::toJson() const {
-    return json{
-        {"samplingSupport", samplingSupport},
-        {"notificationHandling", notificationHandling}
-    };
+json capability::toJson() const {
+    json cap {{name, {}}};
+    if (subscribe) {
+        cap[name]["subscribe"] = true;
+    }
+    if (listChanged) {
+        cap[name]["listChanged"] = true;
+    }
+    return cap;
 }
 
-json mcp::client_info::toJson() const {
-    return json{
-        {"name", name},
-        {"version", version}
-    };
-}
+mcp::initialize_request::initialize_request(nlohmann::json id, capabilities caps)
+    : request(id, "initialize"), caps_(std::move(caps))
+{
+    json params;
+    params["protocolVersion"] = mcp::McpVersion;
+    params["clientInfo"]["name"] = "llama.cpp";
+    params["clientInfo"]["version"] = mcp::ClientVersion;
+    params["capabilities"] = {};
 
-std::optional<json> mcp::initialize_request::getParams() const override {
-    return json{
-        {"protocolVersion", protocolVersion},
-        {"capabilities", capabilities.toJson()},
-        {"clientInfo", clientInfo.toJson()}
-    };
+    for (auto cap = caps.cbegin(); cap != caps.cend(); ++cap) {
+        json cap_json;
+
+        if (cap->subscribe) {
+            cap_json["subscribe"] = true;
+        }
+        if (cap->listChanged) {
+            cap_json["listChanged"] = true;
+        }
+
+        params["capabilities"][cap->name] = cap_json;
+    }
+
+    params(params);
 }
 
 json mcp::server_capabilities::toJson() const {

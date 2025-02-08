@@ -6,6 +6,7 @@ namespace mcp
 {
     extern const std::string JsonRpcVersion;
     extern const std::string McpVersion;
+    extern const std::string ClientVersion;
 
     class message {
     public:
@@ -92,52 +93,20 @@ namespace mcp
     };
 
 
-    struct client_capabilities {
-        bool samplingSupport = false;
-        bool notificationHandling = false;
-        nlohmann::json toJson() const;
-    };
-
-
-    struct client_info {
+    struct capability {
         std::string name;
-        std::string version;
-        nlohmann::json toJson() const;
+        bool subscribe   = false;
+        bool listChanged = false;
     };
-
 
     class initialize_request : public request {
-    private:
-        client_capabilities capabilities;
-        client_info clientInfo;
-
     public:
-        initialize_request(std::string requestId,
-                               std::string version,
-                               client_capabilities caps,
-                               client_info info)
+        using capabilities = std::vector<capability>;
+        initialize_request(nlohmann::json id, capabilities caps);
 
-            : id(std::move(requestId)),
-              protocolVersion(std::move(version)),
-              capabilities(std::move(caps)),
-              clientInfo(std::move(info))
-            {}
-
-        std::string getMethod() const override { return "initialize"; }
-        nlohmann::json getId() const override { return id; }
-        std::optional<json> getParams() const override;
+    private:
+        capabilities caps_;
     };
-
-
-    struct server_capabilities {
-        bool resourceSubscriptions = false;
-        bool toolSupport = false;
-        bool promptTemplates = false;
-
-        nlohmann::json toJson() const;
-        static server_capabilities fromJson(const json& j);
-    };
-
 
     struct server_info {
         std::string name;
