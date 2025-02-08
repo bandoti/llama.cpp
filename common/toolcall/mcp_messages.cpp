@@ -3,15 +3,41 @@
 
 using json = nlohmann::json;
 
+const std::string mcp::JsonRpcVersion = "2.0";
+
+void mcp::message::id(std::optional<nlohmann::json> id) {
+    id_ = std::move(id);
+}
+
+const std::optional<nlohmann::json> & mcp::message::id() const {
+    return id_;
+}
+
 json mcp::request::toJson() const override {
     json j;
-    j["jsonrpc"] = getJsonRpcVersion();
-    j["method"] = getMethod();
-    j["id"] = getId();
-    if (getParams()) {
-        j["params"] = getParams().value();
+    j["jsonrpc"] = JsonRpcVersion();
+    j["method"] = method();
+    j["id"] = id();
+    if (params()) {
+        j["params"] = params().value();
     }
     return j;
+}
+
+void mcp::request::method(std::string method) {
+    method_ = std::move(method);
+}
+
+const std::string & mcp::request::method() const {
+    return method_;
+}
+
+void mcp::request::params(std::optional<nlohmann::json> params) {
+    params_ = std::move(params);
+}
+
+const std::optional<nlohmann::json> & mcp::request::params() const {
+    return params_;
 }
 
 json mcp::response::error::toJson() const {
@@ -26,24 +52,56 @@ json mcp::response::error::toJson() const {
 
 json mcp::response::toJson() const override {
     json j;
-    j["jsonrpc"] = getJsonRpcVersion();
-    j["id"] = getId();
-    if (getResult()) {
-        j["result"] = getResult().value();
-    } else if (getError()) {
-        j["error"] = getError()->toJson();
+    j["jsonrpc"] = JsonRpcVersion();
+    j["id"] = id();
+    if (result()) {
+        j["result"] = result().value();
+    } else if (error()) {
+        j["error"] = error()->toJson();
     }
     return j;
 }
 
+void mcp::response::result(std::optional<nlohmann::json> result) {
+    result_ = std::move(result);
+}
+
+const std::optional<nlohmann::json> & mcp::response::result() const {
+    return result_;
+}
+
+void mcp::response::error(std::optional<mcp::response::error> error) {
+    error_ = std::move(error);
+}
+
+const std::optional<mcp::response::error> & mcp::response::error() const {
+    return error_;
+}
+
 json mcp::notification::toJson() const override {
     json j;
-    j["jsonrpc"] = getJsonRpcVersion();
-    j["method"] = getMethod();
-    if (getParams()) {
-        j["params"] = getParams().value();
+    j["jsonrpc"] = JsonRpcVersion();
+    j["method"] = method();
+    if (params()) {
+        j["params"] = params().value();
     }
     return j;
+}
+
+void mcp::notification::method(std::string method) {
+    method_ = std::move(method);
+}
+
+const std::string & mcp::notification::method() const {
+    return method_;
+}
+
+void mcp::notification::params(std::optional<nlohmann::json> params) {
+    params_ = std::move(params);
+}
+
+const std::optional<nlohmann::json> & mcp::notification::params() const {
+    return params_;
 }
 
 json mcp::client_capabilities::toJson() const {

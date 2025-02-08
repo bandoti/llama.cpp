@@ -4,23 +4,37 @@
 
 namespace mcp
 {
+    static const std::string JsonRpcVersion;
+
     class message {
     public:
         virtual ~message() = default;
-        virtual std::string getJsonRpcVersion() const {
-            return "2.0";
-        }
-        virtual std::optional<nlohmann::json> getId() const = 0;
         virtual nlohmann::json toJson() const = 0;
+
+        void id(std::optional<nlohmann::json> id);
+        const std::optional<nlohmann::json> & id() const;
+
+    private:
+        std::optional<nlohmann::json> id_;
     };
+
 
     class request : public message {
     public:
         virtual ~request() = default;
-        virtual std::string getMethod() const = 0;
-        virtual std::optional<nlohmann::json> getParams() const = 0;
         nlohmann::json toJson() const override;
+
+        void method(std::string method);
+        const std::string & method() const;
+
+        void params(std::optional<nlohmann::json> params);
+        const std::optional<nlohmann::json> & params() const;
+
+    private:
+        std::string method_;
+        std::optional<nlohmann::json> params_;
     };
+
 
     class response : public message {
     public:
@@ -31,18 +45,36 @@ namespace mcp
             nlohmann::json toJson() const;
         };
         virtual ~response() = default;
-        virtual std::optional<nlohmann::json> getResult() const = 0;
-        virtual std::optional<error> getError() const = 0;
-        nlohmann::json toJson() const override;
+        virtual nlohmann::json toJson() const override;
+
+        void result(std::optional<nlohmann::json> result);
+        const std::optional<nlohmann::json> & result() const;
+
+        void error(std::optional<error> error);
+        const std::optional<error> & error() const;
+
+    private:
+        std::optional<nlohmann::json> result_;
+        std::optional<error> error_;
     };
+
 
     class notification : public message {
     public:
         virtual ~notification() = default;
-        virtual std::string getMethod() const = 0;
-        virtual std::optional<nlohmann::json> getParams() const = 0;
-        nlohmann::json toJson() const override;
+        virtual nlohmann::json toJson() const override;
+
+        void method(std::string method);
+        const std::string & method() const;
+
+        void params(std::optional<nlohmann::json> params);
+        const std::optional<nlohmann::json> & params() const;
+
+    private:
+        std::string method_;
+        std::optional<nlohmann::json> params_;
     };
+
 
     struct client_capabilities {
         bool samplingSupport = false;
@@ -50,11 +82,13 @@ namespace mcp
         nlohmann::json toJson() const;
     };
 
+
     struct client_info {
         std::string name;
         std::string version;
         nlohmann::json toJson() const;
     };
+
 
     class initialize_request : public request {
     private:
@@ -80,6 +114,7 @@ namespace mcp
         std::optional<json> getParams() const override;
     };
 
+
     struct server_capabilities {
         bool resourceSubscriptions = false;
         bool toolSupport = false;
@@ -89,6 +124,7 @@ namespace mcp
         static server_capabilities fromJson(const json& j);
     };
 
+
     struct server_info {
         std::string name;
         std::string version;
@@ -96,6 +132,7 @@ namespace mcp
         nlohmann::json toJson() const;
         static server_info fromJson(const json& j);
     };
+
 
     class initialize_response : public response {
     private:
@@ -120,6 +157,7 @@ namespace mcp
         std::optional<json> getResult() const override;
         static initialize_response fromJson(const json& j);
     };
+
 
     class initialized_notification : public notification {
     public:
