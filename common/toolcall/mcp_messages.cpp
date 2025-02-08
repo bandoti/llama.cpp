@@ -3,7 +3,7 @@
 
 using json = nlohmann::json;
 
-json mcp_request::toJson() const override {
+json mcp::request::toJson() const override {
     json j;
     j["jsonrpc"] = getJsonRpcVersion();
     j["method"] = getMethod();
@@ -14,7 +14,7 @@ json mcp_request::toJson() const override {
     return j;
 }
 
-json mcp_response::error::toJson() const {
+json mcp::response::error::toJson() const {
     json j;
     j["code"] = code;
     j["message"] = message;
@@ -24,7 +24,7 @@ json mcp_response::error::toJson() const {
     return j;
 }
 
-json mcp_response::toJson() const override {
+json mcp::response::toJson() const override {
     json j;
     j["jsonrpc"] = getJsonRpcVersion();
     j["id"] = getId();
@@ -36,7 +36,7 @@ json mcp_response::toJson() const override {
     return j;
 }
 
-json mcp_notification::toJson() const override {
+json mcp::notification::toJson() const override {
     json j;
     j["jsonrpc"] = getJsonRpcVersion();
     j["method"] = getMethod();
@@ -46,21 +46,21 @@ json mcp_notification::toJson() const override {
     return j;
 }
 
-json mcp_client_capabilities::toJson() const {
+json mcp::client_capabilities::toJson() const {
     return json{
         {"samplingSupport", samplingSupport},
         {"notificationHandling", notificationHandling}
     };
 }
 
-json mcp_client_info::toJson() const {
+json mcp::client_info::toJson() const {
     return json{
         {"name", name},
         {"version", version}
     };
 }
 
-std::optional<json> mcp_initialize_request::getParams() const override {
+std::optional<json> mcp::initialize_request::getParams() const override {
     return json{
         {"protocolVersion", protocolVersion},
         {"capabilities", capabilities.toJson()},
@@ -68,7 +68,7 @@ std::optional<json> mcp_initialize_request::getParams() const override {
     };
 }
 
-json mcp_server_capabilities::toJson() const {
+json mcp::server_capabilities::toJson() const {
     return json{
         {"resourceSubscriptions", resourceSubscriptions},
         {"toolSupport", toolSupport},
@@ -76,8 +76,8 @@ json mcp_server_capabilities::toJson() const {
     };
 }
 
-mcp_server_capabilities mcp_server_capabilities::fromJson(const json& j) {
-    mcp_server_capabilities caps;
+mcp::server_capabilities mcp::server_capabilities::fromJson(const json& j) {
+    mcp::server_capabilities caps;
     if (j.contains("resourceSubscriptions"))
         caps.resourceSubscriptions = j.at("resourceSubscriptions").get<bool>();
 
@@ -90,15 +90,15 @@ mcp_server_capabilities mcp_server_capabilities::fromJson(const json& j) {
     return caps;
 }
 
-json mcp_server_info::toJson() const {
+json mcp::server_info::toJson() const {
     return json{
         {"name", name},
         {"version", version}
     };
 }
 
-mcp_server_info mcp_server_info::fromJson(const json& j) {
-    mcp_server_info info;
+mcp::server_info mcp::server_info::fromJson(const json& j) {
+    mcp::server_info info;
     if (j.contains("name"))
         info.name = j.at("name").get<std::string>();
 
@@ -108,7 +108,7 @@ mcp_server_info mcp_server_info::fromJson(const json& j) {
     return info;
 }
 
-std::optional<json> mcp_initialize_response::getResult() const override {
+std::optional<json> mcp::initialize_response::getResult() const override {
     return json{
         {"protocolVersion", protocolVersion},
         {"capabilities", capabilities.toJson()},
@@ -116,11 +116,11 @@ std::optional<json> mcp_initialize_response::getResult() const override {
     };
 }
 
-mcp_initialize_response mcp_initialize_response::fromJson(const json& j) {
-    return mcp_initialize_response(
+mcp::initialize_response mcp::initialize_response::fromJson(const json& j) {
+    return mcp::initialize_response(
         j.at("id").get<std::string>(),
         j.at("result").at("protocolVersion").get<std::string>(),
-        mcp_server_capabilities::fromJson(j.at("result").at("capabilities")),
-        mcp_server_info::fromJson(j.at("result").at("serverInfo"))
+        mcp::server_capabilities::fromJson(j.at("result").at("capabilities")),
+        mcp::server_info::fromJson(j.at("result").at("serverInfo"))
         );
 }
