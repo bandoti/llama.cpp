@@ -28,11 +28,13 @@ mcp::request::request(std::optional<nlohmann::json> id,
 {
 }
 
-json mcp::request::toJson() const override {
+json mcp::request::toJson() const {
     json j;
-    j["jsonrpc"] = JsonRpcVersion();
+    j["jsonrpc"] = JsonRpcVersion;
     j["method"] = method();
-    j["id"] = id();
+    if (id()) {
+        j["id"] = id().value();
+    }
     if (params()) {
         j["params"] = params().value();
     }
@@ -56,8 +58,8 @@ const std::optional<nlohmann::json> & mcp::request::params() const {
 }
 
 mcp::response::response(std::optional<nlohmann::json> id,
-                        std::optional<nlohmann::json> result = std::nullopt,
-                        std::optional<error> error = std::nullopt)
+                        std::optional<nlohmann::json> result,
+                        std::optional<mcp::response::error> error)
 
     : message(id), result_(result), error_(error)
 {
@@ -73,14 +75,16 @@ json mcp::response::error::toJson() const {
     return j;
 }
 
-json mcp::response::toJson() const override {
+json mcp::response::toJson() const {
     json j;
-    j["jsonrpc"] = JsonRpcVersion();
-    j["id"] = id();
+    j["jsonrpc"] = JsonRpcVersion;
+    if (id()) {
+        j["id"] = id().value();
+    }
     if (result()) {
         j["result"] = result().value();
-    } else if (error()) {
-        j["error"] = error()->toJson();
+    } else if (getError()) {
+        j["error"] = getError()->toJson();
     }
     return j;
 }
@@ -93,23 +97,23 @@ const std::optional<nlohmann::json> & mcp::response::result() const {
     return result_;
 }
 
-void mcp::response::error(std::optional<mcp::response::error> error) {
+void mcp::response::setError(std::optional<mcp::response::error> error) {
     error_ = std::move(error);
 }
 
-const std::optional<mcp::response::error> & mcp::response::error() const {
+const std::optional<mcp::response::error> & mcp::response::getError() const {
     return error_;
 }
 
 mcp::notification::notification(
-    std::string method, std::optional<nlohmann::json> params = std::nullopt)
+    std::string method, std::optional<nlohmann::json> params)
     : message(), method_(method), params_(params)
 {
 }
 
-json mcp::notification::toJson() const override {
+json mcp::notification::toJson() const {
     json j;
-    j["jsonrpc"] = JsonRpcVersion();
+    j["jsonrpc"] = JsonRpcVersion;
     j["method"] = method();
     if (params()) {
         j["params"] = params().value();
@@ -133,18 +137,7 @@ const std::optional<nlohmann::json> & mcp::notification::params() const {
     return params_;
 }
 
-json capability::toJson() const {
-    json cap {{name, {}}};
-    if (subscribe) {
-        cap[name]["subscribe"] = true;
-    }
-    if (listChanged) {
-        cap[name]["listChanged"] = true;
-    }
-    return cap;
-}
-
-mcp::initialize_request::initialize_request(nlohmann::json id, capabilities caps)
+mcp::initialize_request::initialize_request(nlohmann::json id, mcp::capabilities caps)
     : request(id, "initialize"), caps_(std::move(caps))
 {
      refreshParams();
@@ -157,7 +150,7 @@ void mcp::initialize_request::refreshParams() {
     params["clientInfo"]["version"] = version();
     params["capabilities"] = {};
 
-    for (auto cap = caps.cbegin(); cap != caps.cend(); ++cap) {
+    for (auto cap = caps_.cbegin(); cap != caps_.cend(); ++cap) {
         json cap_json;
 
         if (cap->subscribe) {
@@ -170,7 +163,7 @@ void mcp::initialize_request::refreshParams() {
         params["capabilities"][cap->name] = cap_json;
     }
 
-    params(params);
+    this->params(std::move(params));
 }
 
 void mcp::initialize_request::capabilities(mcp::capabilities caps) {
@@ -184,7 +177,7 @@ const mcp::capabilities & mcp::initialize_request::capabilities() const {
 
 mcp::initialize_response::initialize_response(
     nlohmann::json id, std::string name, std::string version, std::string protoVersion,
-    capabilities caps)
+    mcp::capabilities caps)
     : response(id), name_(std::move(name)), version_(std::move(version)),
       protoVersion_(std::move(protoVersion)), caps_(std::move(caps))
 {
@@ -198,7 +191,7 @@ void mcp::initialize_response::refreshResult() {
     result["serverInfo"]["version"] = version();
     result["capabilities"] = {};
 
-    for (auto cap = caps.cbegin(); cap != caps.cend(); ++cap) {
+    for (auto cap = caps_.cbegin(); cap != caps_.cend(); ++cap) {
         json cap_json;
 
         if (cap->subscribe) {
@@ -211,7 +204,7 @@ void mcp::initialize_response::refreshResult() {
         result["capabilities"][cap->name] = cap_json;
     }
 
-    result(result);
+    this->result(std::move(result));
 }
 
 void mcp::initialize_response::name(std::string name) {
@@ -255,7 +248,7 @@ mcp::initialize_response mcp::initialize_response::fromJson(const nlohmann::json
     std::string version = j["result"]["serverInfo"]["version"];
     std::string protoVersion = j["result"]["protocolVersion"];
 
-    capabilities caps;
+    mcp::capabilities caps;
     if (j["result"].contains("capabilities")) {
         for (const auto& [key, value] : j["result"]["capabilities"].items()) {
             capability cap;

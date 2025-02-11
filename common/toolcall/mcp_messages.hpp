@@ -1,7 +1,7 @@
 #include <string>
 #include <optional>
 #include <vector>
-#include <nlohmann/json.hpp>
+#include "../json.hpp"
 
 namespace mcp
 {
@@ -65,8 +65,8 @@ namespace mcp
         void result(std::optional<nlohmann::json> result);
         const std::optional<nlohmann::json> & result() const;
 
-        void error(std::optional<error> error);
-        const std::optional<error> & error() const;
+        void setError(std::optional<error> error);
+        const std::optional<error> & getError() const;
 
     private:
         std::optional<nlohmann::json> result_;
@@ -104,19 +104,19 @@ namespace mcp
 
     class initialize_request : public request {
     public:
-        initialize_request(nlohmann::json id, capabilities caps);
+        initialize_request(nlohmann::json id, mcp::capabilities caps);
 
         const std::string & name()    const { return ClientName; }
         const std::string & version() const { return ClientVersion; }
         const std::string & protoVersion() const { return McpVersion; }
 
-        void capabilities(capabilities capabilities);
-        const capabilities & capabilities() const;
+        void capabilities(mcp::capabilities capabilities);
+        const mcp::capabilities & capabilities() const;
 
     private:
         void refreshParams();
 
-        capabilities caps_;
+        mcp::capabilities caps_;
     };
 
 
@@ -126,21 +126,21 @@ namespace mcp
                             std::string name,
                             std::string version,
                             std::string protoVersion,
-                            capabilities caps);
+                            mcp::capabilities caps);
 
         void name(std::string name);
         const std::string & name() const;
 
-        void version(std::String version);
+        void version(std::string version);
         const std::string & version() const;
 
         void protoVersion(std::string protoVersion);
         const std::string & protoVersion() const;
 
-        void capabilities(capabilities capabilities);
-        const capabilities & capabilities() const;
+        void capabilities(mcp::capabilities capabilities);
+        const mcp::capabilities & capabilities() const;
 
-        static initialize_response fromJson(const json& j);
+        static initialize_response fromJson(const nlohmann::json& j);
 
     private:
         void refreshResult();
@@ -148,7 +148,7 @@ namespace mcp
         std::string name_;
         std::string version_;
         std::string protoVersion_;
-        capabilities caps_;
+        mcp::capabilities caps_;
     };
 
 
