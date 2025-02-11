@@ -8,6 +8,7 @@ namespace mcp
     extern const std::string JsonRpcVersion;
     extern const std::string McpVersion;
     extern const std::string ClientVersion;
+    extern const std::string ClientName;
 
     class message {
     public:
@@ -99,21 +100,28 @@ namespace mcp
         bool listChanged = false;
     };
 
+    using capabilities = std::vector<capability>;
 
     class initialize_request : public request {
     public:
-        using capabilities = std::vector<capability>;
         initialize_request(nlohmann::json id, capabilities caps);
 
+        const std::string & name()    const { return ClientName; }
+        const std::string & version() const { return ClientVersion; }
+        const std::string & protoVersion() const { return McpVersion; }
+
+        void capabilities(capabilities capabilities);
+        const capabilities & capabilities() const;
+
     private:
+        void refreshParams();
+
         capabilities caps_;
     };
 
 
     class initialize_response : public response {
     public:
-        using capabilities = std::vector<capability>;
-
         initialize_response(nlohmann::json id,
                             std::string name,
                             std::string version,
@@ -124,7 +132,7 @@ namespace mcp
         const std::string & name() const;
 
         void version(std::String version);
-        const std::string version() const;
+        const std::string & version() const;
 
         void protoVersion(std::string protoVersion);
         const std::string & protoVersion() const;
@@ -135,10 +143,12 @@ namespace mcp
         static initialize_response fromJson(const json& j);
 
     private:
+        void refreshResult();
+
         std::string name_;
         std::string version_;
         std::string protoVersion_;
-        server_capabilities caps_;
+        capabilities caps_;
     };
 
 

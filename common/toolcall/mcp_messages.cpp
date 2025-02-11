@@ -1,4 +1,4 @@
-#include "mcpmessages.hpp"
+#include "mcp_messages.hpp"
 #include <iostream>
 
 using json = nlohmann::json;
@@ -6,6 +6,7 @@ using json = nlohmann::json;
 const std::string mcp::JsonRpcVersion = "2.0";
 const std::string mcp::McpVersion     = "2024-11-05";
 const std::string mcp::ClientVersion  = "1.0.0";
+const std::string mcp::ClientName     = "llama.cpp";
 
 mcp::message::message(std::optional<nlohmann::json> id) : id_(std::move(id))
 {
@@ -146,10 +147,14 @@ json capability::toJson() const {
 mcp::initialize_request::initialize_request(nlohmann::json id, capabilities caps)
     : request(id, "initialize"), caps_(std::move(caps))
 {
+     refreshParams();
+}
+
+void mcp::initialize_request::refreshParams() {
     json params;
-    params["protocolVersion"] = mcp::McpVersion;
-    params["clientInfo"]["name"] = "llama.cpp";
-    params["clientInfo"]["version"] = mcp::ClientVersion;
+    params["protocolVersion"] = protoVersion();
+    params["clientInfo"]["name"] = name();
+    params["clientInfo"]["version"] = version();
     params["capabilities"] = {};
 
     for (auto cap = caps.cbegin(); cap != caps.cend(); ++cap) {
@@ -166,6 +171,15 @@ mcp::initialize_request::initialize_request(nlohmann::json id, capabilities caps
     }
 
     params(params);
+}
+
+void mcp::initialize_request::capabilities(mcp::capabilities caps) {
+    caps_ = std::move(caps);
+    refreshParams();
+}
+
+const mcp::capabilities & mcp::initialize_request::capabilities() const {
+    return caps_;
 }
 
 mcp::initialize_response::initialize_response(
@@ -174,11 +188,15 @@ mcp::initialize_response::initialize_response(
     : response(id), name_(std::move(name)), version_(std::move(version)),
       protoVersion_(std::move(protoVersion)), caps_(std::move(caps))
 {
-    json params;
-    params["protocolVersion"] = protoVersion;
-    params["clientInfo"]["name"] = name;
-    params["clientInfo"]["version"] = version;
-    params["capabilities"] = {};
+    refreshResult();
+}
+
+void mcp::initialize_response::refreshResult() {
+    json result;
+    result["protocolVersion"] = protoVersion();
+    result["serverInfo"]["name"] = name();
+    result["serverInfo"]["version"] = version();
+    result["capabilities"] = {};
 
     for (auto cap = caps.cbegin(); cap != caps.cend(); ++cap) {
         json cap_json;
@@ -190,15 +208,15 @@ mcp::initialize_response::initialize_response(
             cap_json["listChanged"] = true;
         }
 
-        params["capabilities"][cap->name] = cap_json;
+        result["capabilities"][cap->name] = cap_json;
     }
 
-    params(params);
-
+    result(result);
 }
 
 void mcp::initialize_response::name(std::string name) {
     name_ = std::move(name);
+    refreshResult();
 }
 
 const std::string & mcp::initialize_response::name() const {
@@ -207,6 +225,7 @@ const std::string & mcp::initialize_response::name() const {
 
 void mcp::initialize_response::version(std::string version) {
     version_ = std::move(version);
+    refreshResult();
 }
 
 const std::string & mcp::initialize_response::version() const {
@@ -215,17 +234,19 @@ const std::string & mcp::initialize_response::version() const {
 
 void mcp::initialize_response::protoVersion(std::string protoVersion) {
     protoVersion_ = std::move(protoVersion);
+    refreshResult();
 }
 
 const std::string & mcp::initialize_response::protoVersion() const {
     return protoVersion_;
 }
 
-void mcp::initialize_response::capabilities(capabilities caps) {
+void mcp::initialize_response::capabilities(mcp::capabilities caps) {
     caps_ = std::move(caps);
+    refreshResult();
 }
 
-const mcp::initialize_response::capabilities & mcp::initialize_response::capabilities() const {
+const mcp::capabilities & mcp::initialize_response::capabilities() const {
     return caps_;
 }
 
