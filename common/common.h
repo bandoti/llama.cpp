@@ -3,15 +3,12 @@
 #pragma once
 
 #include "llama-cpp.h"
-
+#include "toolcall/handler.hpp"
 #include <set>
 #include <string>
 #include <vector>
 #include <sstream>
 #include <variant>
-// Change JSON_ASSERT from assert() to GGML_ASSERT:
-#define JSON_ASSERT GGML_ASSERT
-#include "json.hpp"
 
 #ifdef _WIN32
 #define DIRECTORY_SEPARATOR '\\'
@@ -205,42 +202,6 @@ struct common_params_vocoder {
 
     bool use_guide_tokens = false; // enable guide tokens to improve TTS accuracy            // NOLINT
 };
-
-namespace toolcall {
-    class params {
-    public:
-	using json_ptr = std::shared_ptr<nlohmann::ordered_json>;
-	using tools_t = std::variant<std::string, json_ptr>;
-	using tool_choice_t = std::variant<std::string, json_ptr>;
-
-	params(std::string tools  = "",
-			    std::string choice = "auto");
-
-	params(const params & other) = default;
-	params(params && other) noexcept = default;
-	params & operator=(const params & other) = default;
-	params & operator=(params && other) noexcept = default;
-
-	operator bool() const {
-	    if (std::holds_alternative<std::string>(tools_)) {
-		return ! std::get<std::string>(tools_).empty();
-
-	    } else {
-		return std::get<json_ptr>(tools_) == nullptr;
-	    }
-	}
-
-	void tools(std::string tools);
-	const tools_t tools() const { return tools_; }
-
-	void choice(std::string choice);
-	const tool_choice_t & choice() const { return tool_choice_; }
-
-    private:
-	tools_t tools_;
-	tool_choice_t tool_choice_;
-    };
-}
 
 struct common_params {
     int32_t n_predict             =    -1; // new tokens to predict

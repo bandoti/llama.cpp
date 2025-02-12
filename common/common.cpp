@@ -7,6 +7,9 @@
 
 #include "common.h"
 #include "log.h"
+// Change JSON_ASSERT from assert() to GGML_ASSERT:
+#define JSON_ASSERT GGML_ASSERT
+#include "json.hpp"
 #include "json-schema-to-grammar.h"
 #include "llama.h"
 #include "chat.hpp"
@@ -1768,47 +1771,6 @@ std::string common_detokenize(const struct llama_vocab * vocab, const std::vecto
 //
 // Chat template utils
 //
-
-toolcall::params::params(std::string tools, std::string choice) {
-    this->tools(tools);
-    this->choice(choice);
-}
-
-void toolcall::params::tools(std::string tools) {
-    try {
-        if (tools.empty() /*|| tools.beginswith("mcp+http")*/) {
-            tools_ = std::move(tools);
-
-        } else {
-            tools_ = std::make_shared<json>(json::parse(tools));
-            if (! tools_->is_array()) {
-                throw std::invalid_argument("tools must be a valid JSON array");
-            }
-        }
-
-    } catch (const json::exception & err) {
-        throw std::invalid_argument(err.what());
-    }
-}
-
-void toolcall::params::choice(std::string choice) {
-    try {
-        if (choice == "auto" || choice == "required" || choice == "none") {
-            tool_choice_ = std::move(choice);
-
-        } else {
-            auto choice_ptr = std::make_shared<json>(json::parse(choice));
-            tool_choice_ = choice_ptr;
-            if (! choice_ptr->is_object()) {
-                throw std::invalid_argument(
-                    "tool choice must be a valid JSON object, \"auto\", \"required\", or \"none\"");
-            }
-        }
-
-    } catch (const json::exception & err) {
-        throw std::invalid_argument(err.what());
-    }
-}
 
 bool common_chat_verify_template(const std::string & tmpl, bool use_jinja) {
     if (use_jinja) {
