@@ -13,20 +13,20 @@ static bool starts_with(const std::string & str, const std::string & prefix) {
         && str.compare(0, prefix.size(), prefix) == 0;
 }
 
-std::shared_ptr<toolcall::handler> create_handler(const toolcall::params & params) {
+std::shared_ptr<toolcall::handler> toolcall::create_handler(const toolcall::params & params) {
     std::shared_ptr<toolcall::handler> result;
 
     auto tools = params.tools();
-    auto choice = params.tool_choice();
+    auto choice = params.choice();
     bool has_uri = std::holds_alternative<std::string>(tools);
     if (has_uri) {
         auto tools_str = std::get<std::string>(tools);
-        result.reset(new handler(std::make_unique<mcp_impl>(tools_str, choice)));
+        result.reset(new toolcall::handler(std::make_unique<toolcall::mcp_impl>(tools_str, choice)));
 
     } else {
-        auto tools_ptr = std::get<json_ptr>(tools);
+        auto tools_ptr = std::get<toolcall::json_ptr>(tools);
         if (tools_ptr != nullptr) {
-            result.reset(new handler(std::make_unique<loopback_impl>(*tools_ptr, choice)));
+            result.reset(new toolcall::handler(std::make_unique<toolcall::loopback_impl>(*tools_ptr, choice)));
         }
     }
 

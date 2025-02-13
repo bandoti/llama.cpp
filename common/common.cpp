@@ -1858,7 +1858,7 @@ std::string common_chat_apply_template(
                 inputs.tool_choice = std::get<std::string>(choice);
 
             } else {
-                auto choice_ptr = std::get<toolcall::params::json_ptr>(choice);
+                auto choice_ptr = std::get<toolcall::json_ptr>(choice);
                 if (choice_ptr != nullptr) {
                     inputs.tool_choice = *choice_ptr;
                 }
