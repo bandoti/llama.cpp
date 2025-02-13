@@ -1,19 +1,47 @@
 
 #include "handler.hpp"
 
+using json = toolcall::json;
+
 toolcall::params::params(std::string tools, std::string choice) {
     this->tools(tools);
     this->choice(choice);
 }
 
+static bool starts_with(const std::string & str, const std::string & prefix) {
+    return str.size() >= prefix.size()
+        && str.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::shared_ptr<toolcall::handler> create_handler(const toolcall::params & params) {
+    std::shared_ptr<toolcall::handler> result;
+
+    auto tools = params.tools();
+    auto choice = params.tool_choice();
+    bool has_uri = std::holds_alternative<std::string>(tools);
+    if (has_uri) {
+        auto tools_str = std::get<std::string>(tools);
+        result.reset(new handler(std::make_unique<mcp_impl>(tools_str, choice)));
+
+    } else {
+        auto tools_ptr = std::get<json_ptr>(tools);
+        if (tools_ptr != nullptr) {
+            result.reset(new handler(std::make_unique<loopback_impl>(*tools_ptr, choice)));
+        }
+    }
+
+    return result;
+}
+
 void toolcall::params::tools(std::string tools) {
     try {
-        if (tools.empty() /*|| tools.beginswith("mcp+http")*/) {
+        if (tools.empty() || starts_with(tools, "mcp+http")) {
             tools_ = std::move(tools);
 
         } else {
             tools_ = std::make_shared<json>(json::parse(tools));
-            if (! tools_->is_array()) {
+            auto tools_ptr = std::get<std::shared_ptr<json>>(tools_);
+            if (! tools_ptr->is_array()) {
                 throw std::invalid_argument("tools must be a valid JSON array");
             }
         }
@@ -47,50 +75,36 @@ toolcall::params::operator bool() const  {
         return ! std::get<std::string>(tools_).empty();
 
     } else {
-        return std::get<json_ptr>(tools_) == nullptr;
+        return std::get<toolcall::json_ptr>(tools_) != nullptr;
     }
-}
-
-toolcall::handler::handler(std::unique_ptr<handler_impl> impl = nullptr)
-    : impl_(std::move(impl))
-{
-}
-
-void toolcall::handler::setImpl(std::unique_ptr<handler_imp> impl) {
-    impl_ = std::move(impl);
 }
 
 json toolcall::handler::tool_list() {
     return impl_->tool_list();
 }
 
-json toolcall::handler::call(const json & tool_calls) {
-    return impl_->call(tool_calls);
+toolcall::action toolcall::handler::call(const json & request, json & response) {
+    last_action_ = impl_->call(request, response);
+    return last_action_;
 }
 
-toolcall::loopback_impl::loopback_impl(on_tool_list tool_list_callback,
-                                       on_call call_callback)
+const toolcall::tool_choice_t & toolcall::handler::tool_choice() const {
+    return impl_->tool_choice();
+}
+toolcall::action toolcall::handler::last_action() const {
+    return last_action_;
+}
 
-    : tool_list_callback_(tool_list_callback), call_callback_(call_callback)
+toolcall::mcp_impl::mcp_impl(std::string server_uri, tool_choice_t tool_choice)
+    : handler_impl(tool_choice)
 {
-}
-
-json toolcall::loopback_impl::tool_list() {
-    return tool_list_callback_();
-}
-
-json toolcall::loopback_impl::call(const json & tool_calls) {
-    return call_callback_(tool_calls);
-}
-
-
-toolcall::mcp_impl::mcp_impl(std::string server_uri) {
+    // TODO
 }
 
 json toolcall::mcp_impl::tool_list() {
-    return json{}; // TODO
+    return json{};// TODO
 }
 
-json toolcall::mcp_impl::call(const json & tool_calls) {
-    return json{}; // TODO
+toolcall::action toolcall::mcp_impl::call(const json & request, json & response) {
+    return toolcall::ACCEPT; // TODO
 }

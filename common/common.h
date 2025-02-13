@@ -658,7 +658,7 @@ std::string common_chat_apply_template(
         const std::vector<common_chat_msg> & chat,
         bool add_ass,
         bool use_jinja,
-        const toolcall::params & tools = toolcall::params(),
+        toolcall::handler::ptr handler = nullptr,
         toolcall::sampling_updater * update_sparams = nullptr);
 
 // Format single message, while taking into account the position of that message in chat history
@@ -668,7 +668,7 @@ std::string common_chat_format_single(
         const common_chat_msg & new_msg,
         bool add_ass,
         bool use_jinja,
-        const toolcall::params & tools = toolcall::params(),
+        toolcall::handler::ptr handler = nullptr,
         toolcall::sampling_updater * update_sparams = nullptr);
 
 // Returns an example of formatted chat
