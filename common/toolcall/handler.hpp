@@ -84,7 +84,8 @@ namespace toolcall
             return tools_;
         }
 
-        virtual action call(const json &, json &) override {
+        virtual action call(const json & request, json & response) override {
+            response = request;
             return toolcall::DEFER;
         }
 
