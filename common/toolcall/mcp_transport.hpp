@@ -13,8 +13,13 @@ namespace toolcall
         virtual void stop() = 0;
         virtual bool send(const mcp::message_variant & request) = 0;
 
-        void on_received(on_message_callback callback) { callback_ = std::move(callback); }
-        const on_message_callback & on_received() const { return callback_; }
+        void on_received(on_message_callback callback) {
+            callback_ = std::move(callback);
+        }
+
+        const on_message_callback & on_received() const {
+            return callback_;
+        }
 
     protected:
         on_message_callback callback_;

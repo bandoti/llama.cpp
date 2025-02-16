@@ -256,3 +256,7 @@ void mcp::tools_list_response::refreshResult() {
 
     this->result(result);
 }
+
+bool mcp::create_message(const std::string & data, mcp::message_variant & message) {
+    // Parse MCP JSON and convert to specific message types.
+}
