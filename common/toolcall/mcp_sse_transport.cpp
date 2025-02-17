@@ -10,8 +10,9 @@ toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
       sse_thread_(),
       sse_(nullptr),
       endpoint_(nullptr),
-      sse_data_(""),
-      sse_cursor_(0)
+      sse_buffer_(""),
+      sse_cursor_(0),
+      sse_last_id_("")
 {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 }
@@ -36,63 +37,69 @@ static size_t sse_callback(char * data, size_t size, size_t nmemb, void * client
     return transport->process_sse_data(data, len);
 }
 
+void toolcall::mcp_sse_transport::parse_field_value(
+    std::string field, std::string value)
+{
+    if (field == "event") {
+        // Set the event type buffer to field value.
+
+    } else if (field == "data") {
+        // Append the field value to the data buffer,
+        // then append a single U+000A LINE FEED (LF)
+        // character to the data buffer.
+
+    } else if (field == "id") {
+        // If the field value does not contain U+0000 NULL,
+        // then set the last event ID buffer to the field value.
+        // Otherwise, ignore the field.
+
+    } else if (field == "retry") {
+        // If the field value consists of only ASCII digits,
+        // then interpret the field value as an integer in base
+        // ten, and set the event stream's reconnection time to
+        // that integer. Otherwise, ignore the field.
+
+    } else {
+        // Ignore/log value
+    }
+}
+
 size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
-    sse_data_.insert(sse_data_.end(), data, data + len);
+    sse_buffer_.insert(sse_buffer_.end(), data, data + len);
 
-    for (; sse_cursor_ < sse_data_.length(); ++sse_cursor_) {
-        if (sse_data_[sse_cursor_] == '\r' || sse_data_[sse_cursor_] == '\n') {
-            auto last = sse_data_.begin() + sse_cursor_;
+    for (; sse_cursor_ < sse_buffer_.length(); ++sse_cursor_) {
+        if (sse_buffer_[sse_cursor_] == '\r' || sse_buffer_[sse_cursor_] == '\n') {
+            auto last = sse_buffer_.begin() + sse_cursor_;
 
-            std::string line(sse_data_.begin(), last);
+            std::string line(sse_buffer_.begin(), last);
             if (line.empty()) { // Dispatch command
                 mcp::message_variant message;
-                if (mcp::create_message(sse_data_, message)) {
+                if (mcp::create_message(sse_buffer_, message)) {
                     if (callback_) {
                         callback_(message);
                     }
                 }
-                sse_data_.clear();
+                sse_buffer_.clear();
 
-            } else if(line[0] != ':') { // Comments begin with :
+            } else if(line[0] != ':') { // : denotes a comment
                 // Set field/value
-                auto found = line.find(':'); // Field/Values delimited by :
+                auto found = line.find(':');
                 if (found != line.end()) {
                     std::string field (line.begin(), found);
                     std::string value (found, line.end());
-                    if (field == "event") {
-                        // Set the event type buffer to field value.
 
-                    } else if (field == "data") {
-                        // Append the field value to the data buffer,
-                        // then append a single U+000A LINE FEED (LF)
-                        // character to the data buffer.
-
-                    } else if (field == "id") {
-                        // If the field value does not contain U+0000 NULL,
-                        // then set the last event ID buffer to the field value.
-                        // Otherwise, ignore the field.
-
-                    } else if (field == "retry") {
-                        // If the field value consists of only ASCII digits,
-                        // then interpret the field value as an integer in base
-                        // ten, and set the event stream's reconnection time to
-                        // that integer. Otherwise, ignore the field.
-
-                    } else {
-                        // Ignore/log value
-                    }
+                    parse_field_value(std::move(field), std::move(value));
                 }
             }
 
-            bool has_more = sse_cursor_ + 1 < sse_data_.length();
-            if (has_more) {
-                if (*(last + 1) == '\n') { // In the CRLF case
-                    last ++;
+            if (last++ != sse_buffer_.end()) { // Consume line-end
+                if (*last == '\n') {
+                    last ++; // In the CRLF case consume one more
                 }
-                sse_data_ = std::string(last, sse_data_.end());
+                sse_buffer_ = std::string(last, sse_buffer_.end());
 
             } else {
-                sse_data_.clear();
+                sse_buffer_.clear();
             }
             sse_cursor_ = 0;
         }

@@ -20,6 +20,7 @@ namespace toolcall
 
     private:
         void sse_run();
+        void parse_field_value(std::string field, std::string value);
 
         std::string server_uri_;
         bool running_;
@@ -27,15 +28,14 @@ namespace toolcall
         CURL * sse_;
         CURL * endpoint_;
 
-        struct sse_data {
-            std::string data;
-            size_t cursor;
-            std::string event;
+        struct sse_event {
+            std::string type;
             std::string data;
             std::string id;
-        } data_;
+        } event_;
 
-        std::string sse_data_;
+        std::string sse_buffer_;
         size_t sse_cursor_;
+        std::string sse_last_id_;
     };
 }
