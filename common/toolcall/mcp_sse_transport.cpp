@@ -1,5 +1,4 @@
 
-#include <curl/curl.h>
 #include <iostream>
 #include <sstream>
 #include "mcp_sse_transport.hpp"
@@ -9,9 +8,8 @@ toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
     : server_uri_(std::move(server_uri)),
       running_(false),
       sse_thread_(),
-      sse_(nullptr),
       endpoint_(nullptr),
-      event_("", "", ""),
+      event_{"", "", ""},
       sse_buffer_(""),
       sse_cursor_(0),
       sse_last_id_(""),
@@ -43,9 +41,9 @@ bool toolcall::mcp_sse_transport::send(const mcp::message_variant & /*request*/)
 }
 
 static size_t sse_callback(char * data, size_t size, size_t nmemb, void * clientp) {
-    auto transport = static_cast<mcp_sse_transport*>(clientp);
+    auto transport = static_cast<toolcall::mcp_sse_transport*>(clientp);
     size_t len = size * nmemb;
-    return transport->process_sse_data(data, len);
+    return transport->sse_read(data, len);
 }
 
 void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::string value) {
@@ -58,7 +56,7 @@ void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::stri
         // then append a single U+000A LINE FEED (LF)
         // character to the data buffer.
         value += '\n';
-        event_.data.insert(event_.data.end(), std::move(value));
+        event_.data.insert(event_.data.end(), value.begin(), value.end());
 
     } else if (field == "id") {
         // If the field value does not contain U+0000 NULL,
@@ -124,10 +122,12 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
 
             } else if(line[0] != ':') { // : denotes a comment
                 // Set field/value
-                auto found = line.find(':');
-                if (found != line.end()) {
-                    std::string field (line.begin(), found);
-                    std::string value (found, line.end());
+                auto sep_index = line.find(':');
+                if (sep_index != std::string::npos) {
+                    auto sep_i = line.begin() + sep_index;
+
+                    std::string field (line.begin(), sep_i);
+                    std::string value (sep_i + 1, line.end());
 
                     parse_field_value(std::move(field), std::move(value));
                 }
@@ -148,7 +148,7 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
     return len;
 }
 
-void toolcall::mcp_sse_transport::sse_background() {
+void toolcall::mcp_sse_transport::sse_run() {
     std::unique_lock<std::mutex> lock(initializing_mutex_);
     char errbuf[CURL_ERROR_SIZE];
     size_t errlen;
@@ -195,7 +195,7 @@ void toolcall::mcp_sse_transport::sse_background() {
                 if (m->data.result != CURLE_OK) {
                     errlen = strlen(errbuf);
                     if (errlen) {
-                        std::cerr << errbuff << std::endl;
+                        std::cerr << errbuf << std::endl;
                     } else {
                         std::cerr << curl_easy_strerror(m->data.result) << std::endl;
                     }

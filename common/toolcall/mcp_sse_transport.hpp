@@ -4,8 +4,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <thread>
-
-struct CURL;
+#include <curl/curl.h>
 
 namespace toolcall
 {
