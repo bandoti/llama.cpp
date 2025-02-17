@@ -38,9 +38,7 @@ static size_t sse_callback(char * data, size_t size, size_t nmemb, void * client
     return transport->process_sse_data(data, len);
 }
 
-void toolcall::mcp_sse_transport::parse_field_value(
-    std::string field, std::string value)
-{
+void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::string value) {
     if (field == "event") {
         // Set the event type buffer to field value.
         event_.type = std::move(value);
@@ -73,6 +71,19 @@ void toolcall::mcp_sse_transport::parse_field_value(
     }
 }
 
+void toolcall::mcp_sse_transport::on_endpoint_event() {
+    // TODO: Initialize endpoint_ but it won't be used until "send" is called
+}
+
+void toolcall::mcp_sse_transport::on_message_event() {
+    mcp::message_variant message;
+    if (mcp::create_message(event_.data, message)) {
+        if (callback_) {
+            callback_(message);
+        }
+    }
+}
+
 size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
     sse_buffer_.insert(sse_buffer_.end(), data, data + len);
 
@@ -81,15 +92,18 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
             auto last = sse_buffer_.begin() + sse_cursor_;
 
             std::string line(sse_buffer_.begin(), last);
-            if (line.empty()) { // Dispatch command
-                mcp::message_variant message;
-                if (mcp::create_message(event_.data, message)) {
-                    if (callback_) {
-                        callback_(message);
-                    }
+            if (line.empty()) { // Dispatch event
+                if (event_.type == "endpoint") {
+                    on_endpoint_event();
+
+                } else if(event_.type == "message") {
+                    on_message_event();
+
+                } else {
+                    // Ignore/log event
                 }
+
                 sse_last_id_ = event_.id;
-                sse_buffer_.clear();
                 event_ = {"", "", ""};
 
             } else if(line[0] != ':') { // : denotes a comment
