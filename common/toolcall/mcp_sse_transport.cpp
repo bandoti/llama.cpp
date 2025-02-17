@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include "mcp_sse_transport.hpp"
+#include <chrono>
 
 toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
     : server_uri_(std::move(server_uri)),
@@ -140,28 +141,72 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
 }
 
 void toolcall::mcp_sse_transport::sse_background() {
-    sse_ = curl_easy_init();
-    if (! sse_) {
-        // Log error
+    char errbuf[CURL_ERROR_SIZE];
+    size_t errlen;
+    CURLMcode mcode;
+    int num_handles;
+    struct CURLMsg * m;
+    int msgs_in_queue = 0;
+    CURLM * async_handle = nullptr;
+    struct curl_slist * headers = nullptr;
+    CURL * sse = nullptr;
+
+    sse = curl_easy_init();
+    if (! sse) {
         std::cerr << "Failed to initialize CURL" << std::endl;
-        return;
+        goto cleanup;
     }
 
-    curl_easy_setopt(sse_, CURLOPT_URL, server_uri_.c_str());
-    curl_easy_setopt(sse_, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(sse_, CURLOPT_WRITEFUNCTION, sse_callback);
-    curl_easy_setopt(sse_, CURLOPT_WRITEDATA, this);
-
-    struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, "Connection: keep-alive");
-    curl_easy_setopt(sse_, CURLOPT_HTTPHEADER, headers);
 
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        // Log error
-        std::cerr << "CURL error: " << curl_easy_strerror(res) << std::endl;
+    curl_easy_setopt(sse, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(sse, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(sse, CURLOPT_URL, server_uri_.c_str());
+    curl_easy_setopt(sse, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(sse, CURLOPT_WRITEFUNCTION, sse_callback);
+    curl_easy_setopt(sse, CURLOPT_WRITEDATA, this);
+
+    async_handle = curl_multi_init();
+    if (! async_handle) {
+        std::cerr << "Failed to initialize CURL async" << std::endl;
+        goto cleanup;
     }
+    curl_multi_add_handle(async_handle, sse);
 
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    do {
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+
+        mcode = curl_multi_perform(async_handle, &num_handles);
+        if (mcode != CURLM_OK) {
+            std::cerr << curl_multi_strerror(mcode) << std::endl;
+            break;
+        }
+        while ((m = curl_multi_info_read(async_handle, &msgs_in_queue)) != nullptr) {
+            if (m->msg == CURLMSG_DONE) {
+                if (m->data.result != CURLE_OK) {
+                    errlen = strlen(errbuf);
+                    if (errlen) {
+                        std::cerr << errbuff << std::endl;
+                    } else {
+                        std::cerr << curl_easy_strerror(m->data.result) << std::endl;
+                    }
+                    running_ = false;
+                    break;
+                }
+            }
+        }
+
+    } while (running_);
+
+  cleanup:
+    if (headers) {
+        curl_slist_free_all(headers);
+    }
+    if (async_handle) {
+        curl_multi_remove_handle(async_handle, sse);
+        curl_multi_cleanup(async_handle);
+    }
+    if (sse) {
+        curl_easy_cleanup(sse);
+    }
 }

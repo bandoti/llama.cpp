@@ -21,11 +21,12 @@ namespace toolcall
     private:
         void sse_run();
         void parse_field_value(std::string field, std::string value);
+        void on_endpoint_event();
+        void on_message_event();
 
         std::string server_uri_;
         bool running_;
         std::thread sse_thread_;
-        CURL * sse_;
         CURL * endpoint_;
 
         struct sse_event {
