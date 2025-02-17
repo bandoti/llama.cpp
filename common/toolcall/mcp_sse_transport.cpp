@@ -14,16 +14,25 @@ toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
       event_("", "", ""),
       sse_buffer_(""),
       sse_cursor_(0),
-      sse_last_id_("")
+      sse_last_id_(""),
+      initializing_mutex_(),
+      initializing_()
 {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 }
 
 void toolcall::mcp_sse_transport::start() {
     if (running_) return;
-
-    sse_thread_ = std::thread(&toolcall::mcp_sse_transport::sse_run, this);
     running_ = true;
+
+    std::unique_lock<std::mutex> lock(initializing_mutex_);
+    sse_thread_ = std::thread(&toolcall::mcp_sse_transport::sse_run, this);
+    initializing_.wait(lock);
+
+    if (endpoint_ == nullptr) {
+        running_ = false;
+        throw std::runtime_error("Connection to \"" + server_uri_ + "\" failed");
+    }
 }
 
 void toolcall::mcp_sse_transport::stop() {
@@ -39,9 +48,6 @@ static size_t sse_callback(char * data, size_t size, size_t nmemb, void * client
     return transport->process_sse_data(data, len);
 }
 
-// Taken from specification:
-// https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
-//
 void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::string value) {
     if (field == "event") {
         // Set the event type buffer to field value.
@@ -78,7 +84,8 @@ void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::stri
 void toolcall::mcp_sse_transport::on_endpoint_event() {
     endpoint_ = curl_easy_init();
     if (! endpoint_) {
-        // Log error and abort
+        running_ = false;
+        return;
     }
     curl_easy_setopt(endpoint_, CURLOPT_URL, event_.data.c_str());
 }
@@ -108,7 +115,8 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
                     on_message_event();
 
                 } else {
-                    // Ignore/log event
+                    std::cerr << "Unsupported event \""
+                              << event_.type << "\" received" << std::endl;
                 }
 
                 sse_last_id_ = event_.id;
@@ -141,6 +149,7 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
 }
 
 void toolcall::mcp_sse_transport::sse_background() {
+    std::unique_lock<std::mutex> lock(initializing_mutex_);
     char errbuf[CURL_ERROR_SIZE];
     size_t errlen;
     CURLMcode mcode;
@@ -174,7 +183,7 @@ void toolcall::mcp_sse_transport::sse_background() {
     curl_multi_add_handle(async_handle, sse);
 
     do {
-        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
         mcode = curl_multi_perform(async_handle, &num_handles);
         if (mcode != CURLM_OK) {
@@ -194,6 +203,10 @@ void toolcall::mcp_sse_transport::sse_background() {
                     break;
                 }
             }
+        }
+        if (endpoint_ && lock.owns_lock()) { // TODO: timeout if endpoint not received
+            lock.unlock();
+            initializing_.notify_one();
         }
 
     } while (running_);

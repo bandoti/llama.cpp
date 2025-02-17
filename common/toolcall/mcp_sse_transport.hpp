@@ -1,8 +1,9 @@
 #pragma once
 
 #include "mcp_transport.hpp"
+#include <condition_variable>
+#include <mutex>
 #include <thread>
-#include <unordered_map>
 
 struct CURL;
 
@@ -38,5 +39,8 @@ namespace toolcall
         std::string sse_buffer_;
         size_t sse_cursor_;
         std::string sse_last_id_;
+
+        std::mutex initializing_mutex_;
+        std::condition_variable initializing_;
     };
 }
