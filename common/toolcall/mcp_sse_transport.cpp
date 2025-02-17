@@ -38,6 +38,9 @@ static size_t sse_callback(char * data, size_t size, size_t nmemb, void * client
     return transport->process_sse_data(data, len);
 }
 
+// Taken from specification:
+// https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
+//
 void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::string value) {
     if (field == "event") {
         // Set the event type buffer to field value.
@@ -72,7 +75,11 @@ void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::stri
 }
 
 void toolcall::mcp_sse_transport::on_endpoint_event() {
-    // TODO: Initialize endpoint_ but it won't be used until "send" is called
+    endpoint_ = curl_easy_init();
+    if (! endpoint_) {
+        // Log error and abort
+    }
+    curl_easy_setopt(endpoint_, CURLOPT_URL, event_.data.c_str());
 }
 
 void toolcall::mcp_sse_transport::on_message_event() {
@@ -133,25 +140,28 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
 }
 
 void toolcall::mcp_sse_transport::sse_background() {
-    // This is only place the sse_ member should be accessed.
-    // Set options using curl_easy_setopt
-    // Set up write function which handles the events
     sse_ = curl_easy_init();
-    if (!curl) {
+    if (! sse_) {
+        // Log error
         std::cerr << "Failed to initialize CURL" << std::endl;
         return;
     }
 
     curl_easy_setopt(sse_, CURLOPT_URL, server_uri_.c_str());
+    curl_easy_setopt(sse_, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(sse_, CURLOPT_WRITEFUNCTION, sse_callback);
     curl_easy_setopt(sse_, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(sse_, CURLOPT_NOPROGRESS, 1L);
-    curl_easy_setopt(sse_, CURLOPT_HTTPHEADER, headers_.get());
+
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Connection: keep-alive");
+    curl_easy_setopt(sse_, CURLOPT_HTTPHEADER, headers);
 
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
+        // Log error
         std::cerr << "CURL error: " << curl_easy_strerror(res) << std::endl;
     }
 
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 }
