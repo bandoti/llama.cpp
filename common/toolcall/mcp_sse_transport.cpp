@@ -10,6 +10,7 @@ toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
       sse_thread_(),
       sse_(nullptr),
       endpoint_(nullptr),
+      event_("", "", ""),
       sse_buffer_(""),
       sse_cursor_(0),
       sse_last_id_("")
@@ -42,22 +43,30 @@ void toolcall::mcp_sse_transport::parse_field_value(
 {
     if (field == "event") {
         // Set the event type buffer to field value.
+        event_.type = std::move(value);
 
     } else if (field == "data") {
         // Append the field value to the data buffer,
         // then append a single U+000A LINE FEED (LF)
         // character to the data buffer.
+        value += '\n';
+        event_.data.insert(event_.data.end(), std::move(value));
 
     } else if (field == "id") {
         // If the field value does not contain U+0000 NULL,
         // then set the last event ID buffer to the field value.
         // Otherwise, ignore the field.
+        if (! value.empty()) {
+            event_.id = std::move(value);
+        }
 
     } else if (field == "retry") {
         // If the field value consists of only ASCII digits,
         // then interpret the field value as an integer in base
         // ten, and set the event stream's reconnection time to
         // that integer. Otherwise, ignore the field.
+
+        // TODO
 
     } else {
         // Ignore/log value
@@ -74,12 +83,14 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
             std::string line(sse_buffer_.begin(), last);
             if (line.empty()) { // Dispatch command
                 mcp::message_variant message;
-                if (mcp::create_message(sse_buffer_, message)) {
+                if (mcp::create_message(event_.data, message)) {
                     if (callback_) {
                         callback_(message);
                     }
                 }
+                sse_last_id_ = event_.id;
                 sse_buffer_.clear();
+                event_ = {"", "", ""};
 
             } else if(line[0] != ':') { // : denotes a comment
                 // Set field/value
@@ -101,7 +112,7 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
             } else {
                 sse_buffer_.clear();
             }
-            sse_cursor_ = 0;
+            sse_cursor_ = 0; // Prepare to scan for next line-end
         }
     }
     return len;
