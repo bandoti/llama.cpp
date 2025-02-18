@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include "mcp_sse_transport.hpp"
+#include <log.h>
 #include <chrono>
 
 toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
@@ -113,8 +114,7 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
                     on_message_event();
 
                 } else {
-                    std::cerr << "Unsupported event \""
-                              << event_.type << "\" received" << std::endl;
+                    LOG_WRN("Unsupported event \"%s\" received", event_.type.c_str());
                 }
 
                 sse_last_id_ = event_.id;
@@ -162,7 +162,7 @@ void toolcall::mcp_sse_transport::sse_run() {
 
     sse = curl_easy_init();
     if (! sse) {
-        std::cerr << "Failed to initialize CURL" << std::endl;
+        LOG_ERR("Failed to initialize SSE handle");
         goto cleanup;
     }
 
@@ -177,7 +177,7 @@ void toolcall::mcp_sse_transport::sse_run() {
 
     async_handle = curl_multi_init();
     if (! async_handle) {
-        std::cerr << "Failed to initialize CURL async" << std::endl;
+        LOG_ERR("Failed to initialize SSE async handle");
         goto cleanup;
     }
     curl_multi_add_handle(async_handle, sse);
@@ -187,7 +187,7 @@ void toolcall::mcp_sse_transport::sse_run() {
 
         mcode = curl_multi_perform(async_handle, &num_handles);
         if (mcode != CURLM_OK) {
-            std::cerr << curl_multi_strerror(mcode) << std::endl;
+            LOG_ERR("%s", curl_multi_strerror(mcode));
             break;
         }
         while ((m = curl_multi_info_read(async_handle, &msgs_in_queue)) != nullptr) {
@@ -195,9 +195,10 @@ void toolcall::mcp_sse_transport::sse_run() {
                 if (m->data.result != CURLE_OK) {
                     errlen = strlen(errbuf);
                     if (errlen) {
-                        std::cerr << errbuf << std::endl;
+                        LOG_ERR("%s", errbuf);
+
                     } else {
-                        std::cerr << curl_easy_strerror(m->data.result) << std::endl;
+                        LOG_ERR("%s", curl_easy_strerror(m->data.result));
                     }
                     running_ = false;
                     break;
