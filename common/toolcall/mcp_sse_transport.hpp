@@ -10,6 +10,8 @@ namespace toolcall
 {
     class mcp_sse_transport : public mcp_transport {
     public:
+        ~mcp_sse_transport();
+
         mcp_sse_transport(std::string server_uri);
 
         virtual void start() override;
@@ -28,6 +30,8 @@ namespace toolcall
         bool running_;
         std::thread sse_thread_;
         CURL * endpoint_;
+        struct curl_slist * endpoint_headers_;
+        std::vector<char> endpoint_errbuf_;
 
         struct sse_event {
             std::string type;

@@ -5,11 +5,22 @@
 #include <log.h>
 #include <chrono>
 
+toolcall::mcp_sse_transport::~mcp_sse_transport() {
+    if (endpoint_headers_) {
+        curl_slist_free_all(endpoint_headers_);
+    }
+    if (endpoint_) {
+        curl_easy_cleanup(endpoint_);
+    }
+}
+
 toolcall::mcp_sse_transport::mcp_sse_transport(std::string server_uri)
     : server_uri_(std::move(server_uri)),
       running_(false),
       sse_thread_(),
       endpoint_(nullptr),
+      endpoint_headers_(nullptr),
+      endpoint_errbuf_(CURL_ERROR_SIZE),
       event_{"", "", ""},
       sse_buffer_(""),
       sse_cursor_(0),
@@ -30,16 +41,30 @@ void toolcall::mcp_sse_transport::start() {
 
     if (endpoint_ == nullptr) {
         running_ = false;
+        LOG_ERR("Connection to \"%s\" failed", server_uri_.c_str());
         throw std::runtime_error("Connection to \"" + server_uri_ + "\" failed");
     }
 }
 
 void toolcall::mcp_sse_transport::stop() {
+    running_ = false;
 }
 
-bool toolcall::mcp_sse_transport::send(const mcp::message_variant & /*request*/) {
-    // TODO: convert request into MCP compatible JSON and send to endpoint.
-    return false;
+bool toolcall::mcp_sse_transport::send(const mcp::message_variant & request) {
+    if (! running_ || endpoint_ == nullptr) {
+        return false;
+    }
+
+    std::string post_data = std::visit(mcp::message_tojson_visitor{}, request);
+    curl_easy_setopt(endpoint_, CURLOPT_POSTFIELDS, post_data.c_str());
+
+    CURLcode code = curl_easy_perform(endpoint_);
+    if (code != CURLE_OK) {
+        size_t len = strlen(&endpoint_errbuf_[0]);
+        LOG_ERR("%s", (len > 0 ? &endpoint_errbuf_[0] : curl_easy_strerror(code)));
+        return false;
+    }
+    return true;
 }
 
 static size_t sse_callback(char * data, size_t size, size_t nmemb, void * clientp) {
@@ -84,10 +109,20 @@ void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::stri
 void toolcall::mcp_sse_transport::on_endpoint_event() {
     endpoint_ = curl_easy_init();
     if (! endpoint_) {
+        LOG_ERR("Failed to create endpoint handle");
         running_ = false;
         return;
     }
+
     curl_easy_setopt(endpoint_, CURLOPT_URL, event_.data.c_str());
+
+    endpoint_headers_ =
+        curl_slist_append(endpoint_headers_, "Content-Type: application/json");
+    curl_slist_append(endpoint_headers_, "Connection: keep-alive");
+    curl_easy_setopt(endpoint_, CURLOPT_HTTPHEADER, endpoint_headers_);
+    curl_easy_setopt(endpoint_, CURLOPT_ERRORBUFFER, &endpoint_errbuf_[0]);
+
+    // Later calls to send will reuse the endpoint_ handle
 }
 
 void toolcall::mcp_sse_transport::on_message_event() {
