@@ -222,15 +222,6 @@ namespace mcp
                      tools_list_request,
                      tools_list_response>;
 
-    struct message_tojson_visitor {
-        std::string operator() (const std::monostate &) const {
-            return "{}";
-        }
-        template <typename T>
-        std::string operator() (const T & msg) const {
-            return msg.toJson();
-        }
-    };
-
+    std::string message_to_json(const message_variant & message);
     bool create_message(const std::string & data, message_variant & message);
 }

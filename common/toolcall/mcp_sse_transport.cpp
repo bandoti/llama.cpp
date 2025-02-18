@@ -55,7 +55,7 @@ bool toolcall::mcp_sse_transport::send(const mcp::message_variant & request) {
         return false;
     }
 
-    std::string post_data = std::visit(mcp::message_tojson_visitor{}, request);
+    std::string post_data = mcp::message_to_json(request);
     curl_easy_setopt(endpoint_, CURLOPT_POSTFIELDS, post_data.c_str());
 
     CURLcode code = curl_easy_perform(endpoint_);
