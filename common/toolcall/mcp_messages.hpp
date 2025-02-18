@@ -2,7 +2,7 @@
 #include <optional>
 #include <vector>
 #include <variant>
-#include "../json.hpp"
+#include <json.hpp>
 
 namespace mcp
 {

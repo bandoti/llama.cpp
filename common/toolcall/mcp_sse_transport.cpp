@@ -38,6 +38,7 @@ void toolcall::mcp_sse_transport::stop() {
 }
 
 bool toolcall::mcp_sse_transport::send(const mcp::message_variant & /*request*/) {
+    // TODO: convert request into MCP compatible JSON and send to endpoint.
     return false;
 }
 
