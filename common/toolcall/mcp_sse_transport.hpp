@@ -16,7 +16,7 @@ namespace toolcall
 
         virtual void start() override;
         virtual void stop()  override;
-        virtual bool send(const mcp::message_variant & request) override;
+        virtual bool send(const std::string & request_json) override;
 
         size_t sse_read(const char * data, size_t len);
 

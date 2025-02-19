@@ -222,6 +222,5 @@ namespace mcp
                      tools_list_request,
                      tools_list_response>;
 
-    std::string message_to_json(const message_variant & message);
     bool create_message(const std::string & data, message_variant & message);
 }

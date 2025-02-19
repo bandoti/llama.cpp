@@ -41,7 +41,7 @@ void toolcall::mcp_sse_transport::start() {
 
     if (endpoint_ == nullptr) {
         running_ = false;
-        LOG_ERR("Connection to \"%s\" failed", server_uri_.c_str());
+        LOG_ERR("SSE: Connection to \"%s\" failed", server_uri_.c_str());
         throw std::runtime_error("Connection to \"" + server_uri_ + "\" failed");
     }
 }
@@ -50,13 +50,12 @@ void toolcall::mcp_sse_transport::stop() {
     running_ = false;
 }
 
-bool toolcall::mcp_sse_transport::send(const mcp::message_variant & request) {
+bool toolcall::mcp_sse_transport::send(const std::string & request_json) {
     if (! running_ || endpoint_ == nullptr) {
         return false;
     }
 
-    std::string post_data = mcp::message_to_json(request);
-    curl_easy_setopt(endpoint_, CURLOPT_POSTFIELDS, post_data.c_str());
+    curl_easy_setopt(endpoint_, CURLOPT_POSTFIELDS, request_json.c_str());
 
     CURLcode code = curl_easy_perform(endpoint_);
     if (code != CURLE_OK) {
@@ -99,17 +98,17 @@ void toolcall::mcp_sse_transport::parse_field_value(std::string field, std::stri
         // ten, and set the event stream's reconnection time to
         // that integer. Otherwise, ignore the field.
 
-        // TODO
+        LOG_INF("SSE: Retry field is not currently implemented");
 
     } else {
-        // Ignore/log value
+        LOG_WRN("SSE: Unsupported field \"%s\" received", field.c_str());
     }
 }
 
 void toolcall::mcp_sse_transport::on_endpoint_event() {
     endpoint_ = curl_easy_init();
     if (! endpoint_) {
-        LOG_ERR("Failed to create endpoint handle");
+        LOG_ERR("SSE: Failed to create endpoint handle");
         running_ = false;
         return;
     }
@@ -128,9 +127,8 @@ void toolcall::mcp_sse_transport::on_endpoint_event() {
 void toolcall::mcp_sse_transport::on_message_event() {
     mcp::message_variant message;
     if (mcp::create_message(event_.data, message)) {
-        if (callback_) {
-            callback_(message);
-        }
+        notify_if<mcp::initialize_response>(message);
+        notify_if<mcp::tools_list_response>(message);
     }
 }
 
@@ -150,7 +148,7 @@ size_t toolcall::mcp_sse_transport::sse_read(const char * data, size_t len) {
                     on_message_event();
 
                 } else {
-                    LOG_WRN("Unsupported event \"%s\" received", event_.type.c_str());
+                    LOG_WRN("SSE: Unsupported event \"%s\" received", event_.type.c_str());
                 }
 
                 sse_last_id_ = event_.id;
@@ -198,7 +196,7 @@ void toolcall::mcp_sse_transport::sse_run() {
 
     sse = curl_easy_init();
     if (! sse) {
-        LOG_ERR("Failed to initialize SSE handle");
+        LOG_ERR("SSE: Failed to initialize handle");
         goto cleanup;
     }
 
@@ -213,7 +211,7 @@ void toolcall::mcp_sse_transport::sse_run() {
 
     async_handle = curl_multi_init();
     if (! async_handle) {
-        LOG_ERR("Failed to initialize SSE async handle");
+        LOG_ERR("SSE: Failed to initialize async handle");
         goto cleanup;
     }
     curl_multi_add_handle(async_handle, sse);
@@ -223,7 +221,7 @@ void toolcall::mcp_sse_transport::sse_run() {
 
         mcode = curl_multi_perform(async_handle, &num_handles);
         if (mcode != CURLM_OK) {
-            LOG_ERR("%s", curl_multi_strerror(mcode));
+            LOG_ERR("SSE: %s", curl_multi_strerror(mcode));
             break;
         }
         while ((m = curl_multi_info_read(async_handle, &msgs_in_queue)) != nullptr) {
@@ -231,10 +229,10 @@ void toolcall::mcp_sse_transport::sse_run() {
                 if (m->data.result != CURLE_OK) {
                     errlen = strlen(errbuf);
                     if (errlen) {
-                        LOG_ERR("%s", errbuf);
+                        LOG_ERR("SSE: %s", errbuf);
 
                     } else {
-                        LOG_ERR("%s", curl_easy_strerror(m->data.result));
+                        LOG_ERR("SSE: %s", curl_easy_strerror(m->data.result));
                     }
                     running_ = false;
                     break;

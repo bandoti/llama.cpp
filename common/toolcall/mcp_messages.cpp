@@ -257,22 +257,18 @@ void mcp::tools_list_response::refreshResult() {
     this->result(result);
 }
 
-namespace {
-    struct message_tojson_visitor {
-        std::string operator() (const std::monostate &) const {
-            return "{}";
-        }
-        template <typename T>
-        std::string operator() (const T & msg) const {
-            return msg.toJson();
-        }
-    };
-}
-
-std::string mcp::message_to_json(const mcp::message_variant & message) {
-    return std::visit(message_tojson_visitor{}, message);
+static bool has_initialized_response(const nlohmann::json & data) {
+    return data["result"].contains("serverInfo");
 }
 
 bool mcp::create_message(const std::string & data, mcp::message_variant & message) {
-    // Parse MCP JSON and convert to specific message types.
+    json j = json::parse(data);
+
+    if (has_initialized_response(j)) {
+        message = mcp::initialize_response::fromJson(j);
+
+    } else {
+        return false;
+    }
+    return true;
 }
