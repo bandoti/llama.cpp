@@ -106,23 +106,39 @@ public:
 
     std::string operator () (const std::string & role, const std::string & content, [[maybe_unused]] bool use_toolcalls = false) {
 
-        common_chat_msg new_msg;
-        new_msg.role = role;
-        new_msg.content = content;
-
-        common_chat_params cparams;
         common_chat_templates_inputs cinputs;
+        cinputs.use_jinja = params_.use_jinja;
+        cinputs.add_generation_prompt = (role == "user");
 #ifdef LLAMA_USE_TOOLCALL
         if (tc_client_ != nullptr && use_toolcalls) {
             cinputs.tool_choice = common_chat_tool_choice_parse_oaicompat(tc_client_->tool_choice());
             cinputs.tools = common_chat_tools_parse_oaicompat(tc_client_->tool_list());
         }
 #endif
-        bool add_ass = role == "user";
-        auto formatted =
-            common_chat_format_single(chat_templates_, chat_msgs_, new_msg, add_ass, params_.use_jinja,
-                                      &cinputs, &cparams);
+        for (const auto & msg : chat_msgs_) {
+            cinputs.messages.push_back(common_chat_msg(msg));
+        }
 
+        common_chat_msg new_msg = common_chat_parse(content, *chat_format_);
+        new_msg.role = role;
+
+        if (! new_msg.tool_calls.empty()) {
+            nlohmann::json result_array = nlohmann::json::array();
+            for (const auto & tc : new_msg.tool_calls) {
+                toolcall::result_set res = tc_client_->call(tc.name, tc.arguments, tc.id);
+                if (! res.empty()) {
+                    for (const auto & r : res) {
+                        result_array.push_back(r.data);
+                    }
+                }
+            }
+            new_msg.content += result_array.dump(-1);
+        }
+
+        cinputs.messages.push_back(new_msg);
+        common_chat_params cparams = common_chat_templates_apply(chat_templates_, cinputs);
+
+        auto formatted = cparams.prompt;
         chat_msgs_.push_back(new_msg);
         LOG_DBG("formatted: '%s'\n", formatted.c_str());
 
@@ -144,42 +160,6 @@ private:
     common_chat_format * chat_format_;
 #endif
 };
-
-#ifdef LLAMA_USE_TOOLCALL
-static bool call_tool(common_chat_format chat_format, const std::string & assistant_msg, llama_context * ctx,
-                      toolcall::client::ptr tc_client, std::vector<llama_token> & embd_inp)
-{
-    bool tool_was_called = false;
-    common_chat_msg msg = common_chat_parse(assistant_msg, chat_format);
-    if (! msg.tool_calls.empty()) {
-        for (const auto & tc : msg.tool_calls) {
-            nlohmann::json tc_oai_json {
-                {"type", "function"},
-                {"function", {
-                        {"name", tc.name},
-                        {"arguments", tc.arguments},
-                    }},
-                {"id", tc.id},
-            };
-            toolcall::result_set res = tc_client->call(tc_oai_json);
-            if (! res.empty()) {
-                std::string toolcall_result_str;
-                for (const auto & r : res) {
-                    toolcall_result_str += ("\n" + r.data); // Although more complex results can be
-                                                            // returned (resources, images, etc.),
-                                                            // for now simply append the data. Later
-                                                            // on support for specific models may
-                                                            // allow for unpacking Base64 data.
-                }
-                auto toolcall_result_tok = common_tokenize(ctx, toolcall_result_str, false, true);
-                embd_inp.insert(embd_inp.end(), toolcall_result_tok.begin(), toolcall_result_tok.end());
-            }
-            tool_was_called = true;
-        }
-    }
-    return tool_was_called;
-}
-#endif
 
 int main(int argc, char ** argv) {
     common_params params;
@@ -942,16 +922,6 @@ int main(int argc, char ** argv) {
                     is_interacting = false;
                 }
             }
-
-#ifdef LLAMA_USE_TOOLCALL
-            if ((tc_client && n_past > 0) && (waiting_for_first_input || is_interacting)) {
-                size_t last_len = embd_inp.size();
-                bool was_toolcall = call_tool(chat_format, assistant_ss.str(), ctx, tc_client, embd_inp);
-                if (was_toolcall && last_len < embd_inp.size()) {
-                    LOG("%s", common_token_to_piece(ctx, embd_inp[last_len]).c_str());
-                }
-            }
-#endif
 
             if ((n_past > 0 || waiting_for_first_input) && is_interacting) {
                 LOG_DBG("waiting for user input\n");
