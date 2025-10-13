@@ -276,6 +276,7 @@ int main(int argc, char ** argv) {
     };
 
     std::string prompt;
+    common_chat_format detected_chat_format = COMMON_CHAT_FORMAT_CONTENT_ONLY;
     {
         if (params.conversation_mode && params.enable_chat_template) {
             if (!params.system_prompt.empty()) {
@@ -295,8 +296,15 @@ int main(int argc, char ** argv) {
                 inputs.use_jinja = g_params->use_jinja;
                 inputs.messages = chat_msgs;
                 inputs.add_generation_prompt = !params.prompt.empty();
+                inputs.reasoning_format = params.reasoning_format;
+                // Check if thinking is supported and enabled
+                bool enable_thinking = params.use_jinja && params.reasoning_budget != 0 &&
+                                     common_chat_templates_support_enable_thinking(chat_templates.get());
+                inputs.enable_thinking = enable_thinking;
 
-                prompt = common_chat_templates_apply(chat_templates.get(), inputs).prompt;
+                auto chat_params = common_chat_templates_apply(chat_templates.get(), inputs);
+                prompt = chat_params.prompt;
+                detected_chat_format = chat_params.format; // Store the detected format
             }
         } else {
             // otherwise use the prompt as is
@@ -528,6 +536,14 @@ int main(int argc, char ** argv) {
     std::ostringstream output_ss;     g_output_ss     = &output_ss;
     std::ostringstream assistant_ss; // for storing current assistant message, used in conversation mode
 
+    // Setup reasoning syntax for output parsing
+    common_chat_syntax reasoning_syntax;
+    reasoning_syntax.format = detected_chat_format; // Use the detected chat format
+    reasoning_syntax.reasoning_format = params.reasoning_format;
+    reasoning_syntax.parse_tool_calls = false;
+
+    common_chat_msg previous_parsed_msg;
+
     // the first thing we will do is to output the prompt, so set color accordingly
     console::set_display(console::prompt);
     display = params.display_prompt;
@@ -708,7 +724,24 @@ int main(int argc, char ** argv) {
             embd.push_back(id);
 
             if (params.conversation_mode && !waiting_for_first_input && !llama_vocab_is_eog(vocab, id)) {
-                assistant_ss << common_token_to_piece(ctx, id, false);
+                std::string token_str = common_token_to_piece(ctx, id, false);
+                assistant_ss << token_str;
+
+                // Parse incrementally to detect reasoning content
+                if (params.reasoning_format != COMMON_REASONING_FORMAT_NONE) {
+                    std::string accumulated = assistant_ss.str();
+                    common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
+
+                    // Compute what changed since last parse
+                    auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
+                    for (const auto & diff : diffs) {
+                        // Display reasoning content changes
+                        if (!diff.reasoning_content_delta.empty()) {
+                            LOG("<thinking>%s", diff.reasoning_content_delta.c_str());
+                        }
+                    }
+                    previous_parsed_msg = current_parsed;
+                }
             }
 
             // echo this to console
@@ -821,7 +854,27 @@ int main(int argc, char ** argv) {
                     }
 
                     if (params.enable_chat_template) {
-                        chat_add_and_format("assistant", assistant_ss.str());
+                        std::string response_content;
+                        if (params.reasoning_format != COMMON_REASONING_FORMAT_NONE) {
+                            // Finalize parsing (is_partial=false for complete message)
+                            std::string full_response = assistant_ss.str();
+                            common_chat_msg final_msg = common_chat_parse(full_response, /* is_partial= */ false, reasoning_syntax);
+
+                            // Display reasoning summary if present
+                            if (!final_msg.reasoning_content.empty()) {
+                                LOG("</thinking>\n");
+                                LOG("\n[Reasoning: %zu characters]\n", final_msg.reasoning_content.size());
+                            }
+
+                            // Use parsed content (without reasoning tags)
+                            response_content = final_msg.content;
+
+                            // Reset for next response
+                            previous_parsed_msg = common_chat_msg();
+                        } else {
+                            response_content = assistant_ss.str();
+                        }
+                        chat_add_and_format("assistant", response_content);
                     }
                     is_interacting = true;
                     LOG("\n");
