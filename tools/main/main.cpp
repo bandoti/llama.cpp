@@ -265,46 +265,47 @@ int main(int argc, char ** argv) {
     std::vector<llama_token> embd_inp;
 
     bool waiting_for_first_input = false;
-    auto chat_add_and_format = [&chat_msgs, &chat_templates](const std::string & role, const std::string & content) {
-        common_chat_msg new_msg;
-        new_msg.role = role;
-        new_msg.content = content;
-        auto formatted = common_chat_format_single(chat_templates.get(), chat_msgs, new_msg, role == "user", g_params->use_jinja);
-        chat_msgs.push_back(new_msg);
-        LOG_DBG("formatted: '%s'\n", formatted.c_str());
-        return formatted;
+    common_chat_format detected_chat_format = COMMON_CHAT_FORMAT_CONTENT_ONLY;
+
+    // Helper to apply full chat template and get formatted prompt
+    auto apply_chat_template = [&]() -> std::string {
+        common_chat_templates_inputs inputs;
+        inputs.use_jinja = g_params->use_jinja;
+        inputs.messages = chat_msgs;
+        inputs.add_generation_prompt = !chat_msgs.empty() && chat_msgs.back().role == "user";
+        inputs.reasoning_format = g_params->reasoning_format;
+        bool enable_thinking = g_params->use_jinja && g_params->reasoning_budget != 0 &&
+                             common_chat_templates_support_enable_thinking(chat_templates.get());
+        inputs.enable_thinking = enable_thinking;
+
+        auto chat_params = common_chat_templates_apply(chat_templates.get(), inputs);
+        detected_chat_format = chat_params.format;
+
+        LOG_DBG("Applied chat template, format: %s\n", common_chat_format_name(detected_chat_format));
+        return chat_params.prompt;
     };
 
     std::string prompt;
-    common_chat_format detected_chat_format = COMMON_CHAT_FORMAT_CONTENT_ONLY;
     {
         if (params.conversation_mode && params.enable_chat_template) {
             if (!params.system_prompt.empty()) {
-                // format the system prompt (will use template default if empty)
-                chat_add_and_format("system", params.system_prompt);
+                common_chat_msg system_msg;
+                system_msg.role = "system";
+                system_msg.content = params.system_prompt;
+                chat_msgs.push_back(system_msg);
             }
 
             if (!params.prompt.empty()) {
-                // format and append the user prompt
-                chat_add_and_format("user", params.prompt);
+                common_chat_msg user_msg;
+                user_msg.role = "user";
+                user_msg.content = params.prompt;
+                chat_msgs.push_back(user_msg);
             } else {
                 waiting_for_first_input = true;
             }
 
             if (!params.system_prompt.empty() || !params.prompt.empty()) {
-                common_chat_templates_inputs inputs;
-                inputs.use_jinja = g_params->use_jinja;
-                inputs.messages = chat_msgs;
-                inputs.add_generation_prompt = !params.prompt.empty();
-                inputs.reasoning_format = params.reasoning_format;
-                // Check if thinking is supported and enabled
-                bool enable_thinking = params.use_jinja && params.reasoning_budget != 0 &&
-                                     common_chat_templates_support_enable_thinking(chat_templates.get());
-                inputs.enable_thinking = enable_thinking;
-
-                auto chat_params = common_chat_templates_apply(chat_templates.get(), inputs);
-                prompt = chat_params.prompt;
-                detected_chat_format = chat_params.format; // Store the detected format
+                prompt = apply_chat_template();
             }
         } else {
             // otherwise use the prompt as is
@@ -543,6 +544,7 @@ int main(int argc, char ** argv) {
     reasoning_syntax.parse_tool_calls = false;
 
     common_chat_msg previous_parsed_msg;
+    bool inside_reasoning_block = false;
 
     // the first thing we will do is to output the prompt, so set color accordingly
     console::set_display(console::prompt);
@@ -732,6 +734,9 @@ int main(int argc, char ** argv) {
                     std::string accumulated = assistant_ss.str();
                     common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
 
+                    // Track if we're inside a reasoning block
+                    inside_reasoning_block = !current_parsed.reasoning_content.empty();
+
                     // Compute what changed since last parse
                     auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
                     for (const auto & diff : diffs) {
@@ -773,8 +778,10 @@ int main(int argc, char ** argv) {
             for (auto id : embd) {
                 const std::string token_str = common_token_to_piece(ctx, id, params.special);
 
-                // Console/Stream Output
-                LOG("%s", token_str.c_str());
+                // Console/Stream Output - suppress if inside reasoning block
+                if (!inside_reasoning_block) {
+                    LOG("%s", token_str.c_str());
+                }
 
                 // Record Displayed Tokens To Log
                 // Note: Generated tokens are created one by one hence this check
@@ -854,27 +861,30 @@ int main(int argc, char ** argv) {
                     }
 
                     if (params.enable_chat_template) {
-                        std::string response_content;
+                        // Parse the complete assistant response
+                        std::string full_response = assistant_ss.str();
+                        common_chat_msg assistant_msg;
+
                         if (params.reasoning_format != COMMON_REASONING_FORMAT_NONE) {
-                            // Finalize parsing (is_partial=false for complete message)
-                            std::string full_response = assistant_ss.str();
-                            common_chat_msg final_msg = common_chat_parse(full_response, /* is_partial= */ false, reasoning_syntax);
+                            // Parse with reasoning extraction
+                            assistant_msg = common_chat_parse(full_response, /* is_partial= */ false, reasoning_syntax);
 
                             // Display reasoning summary if present
-                            if (!final_msg.reasoning_content.empty()) {
-                                LOG("</thinking>\n");
-                                LOG("\n[Reasoning: %zu characters]\n", final_msg.reasoning_content.size());
+                            if (!assistant_msg.reasoning_content.empty()) {
+                                LOG("\n[Reasoning: %zu characters]\n", assistant_msg.reasoning_content.size());
                             }
-
-                            // Use parsed content (without reasoning tags)
-                            response_content = final_msg.content;
 
                             // Reset for next response
                             previous_parsed_msg = common_chat_msg();
+                            inside_reasoning_block = false;
                         } else {
-                            response_content = assistant_ss.str();
+                            // No reasoning parsing, just store the raw content
+                            assistant_msg.role = "assistant";
+                            assistant_msg.content = full_response;
                         }
-                        chat_add_and_format("assistant", response_content);
+
+                        // Add the complete parsed message to chat history
+                        chat_msgs.push_back(assistant_msg);
                     }
                     is_interacting = true;
                     LOG("\n");
@@ -952,46 +962,52 @@ int main(int argc, char ** argv) {
                     }
 
                     bool format_chat = params.conversation_mode && params.enable_chat_template;
-                    std::string user_inp = format_chat
-                        ? chat_add_and_format("user", std::move(buffer))
-                        : std::move(buffer);
-                    // TODO: one inconvenient of current chat template implementation is that we can't distinguish between user input and special tokens (prefix/postfix)
-                    const auto line_pfx = common_tokenize(ctx, params.input_prefix, false, true);
-                    const auto line_inp = common_tokenize(ctx, user_inp,            false, format_chat);
-                    const auto line_sfx = common_tokenize(ctx, params.input_suffix, false, true);
 
-                    LOG_DBG("input tokens: %s\n", string_from(ctx, line_inp).c_str());
+                    // Get the current prompt state for comparison
+                    size_t prev_prompt_tokens = embd_inp.size();
 
-                    // if user stop generation mid-way, we must add EOT to finish model's last response
-                    if (need_insert_eot && format_chat) {
-                        llama_token eot = llama_vocab_eot(vocab);
-                        embd_inp.push_back(eot == LLAMA_TOKEN_NULL ? llama_vocab_eos(vocab) : eot);
-                        need_insert_eot = false;
+                    if (format_chat) {
+                        // Add user message to chat history
+                        common_chat_msg user_msg;
+                        user_msg.role = "user";
+                        user_msg.content = buffer;
+                        chat_msgs.push_back(user_msg);
+
+                        // Apply full chat template to get complete formatted prompt
+                        std::string full_prompt = apply_chat_template();
+
+                        // Tokenize the full prompt
+                        auto full_tokens = common_tokenize(ctx, full_prompt, false, true);
+
+                        // Find the incremental tokens (new tokens beyond prev_prompt_tokens)
+                        // The KV cache will handle skipping the unchanged prefix automatically
+                        embd_inp = full_tokens;
+                    } else {
+                        // No chat formatting, just use raw input
+                        const auto line_pfx = common_tokenize(ctx, params.input_prefix, false, true);
+                        const auto line_inp = common_tokenize(ctx, buffer, false, false);
+                        const auto line_sfx = common_tokenize(ctx, params.input_suffix, false, true);
+
+                        embd_inp.insert(embd_inp.end(), line_pfx.begin(), line_pfx.end());
+                        embd_inp.insert(embd_inp.end(), line_inp.begin(), line_inp.end());
+                        embd_inp.insert(embd_inp.end(), line_sfx.begin(), line_sfx.end());
                     }
 
-                    embd_inp.insert(embd_inp.end(), line_pfx.begin(), line_pfx.end());
-                    embd_inp.insert(embd_inp.end(), line_inp.begin(), line_inp.end());
-                    embd_inp.insert(embd_inp.end(), line_sfx.begin(), line_sfx.end());
+                    size_t new_tokens = embd_inp.size() - original_size;
+                    LOG_DBG("input tokens added: %zu\n", new_tokens);
 
                     if (params.verbose_prompt) {
-                        LOG_INF("%s: number of tokens in prompt = %zu\n", __func__, embd_inp.size() - original_size);
-                    }
-
-                    for (size_t i = original_size; i < embd_inp.size(); ++i) {
-                        const llama_token token = embd_inp[i];
-                        const std::string token_str = common_token_to_piece(ctx, token);
-                        output_tokens.push_back(token);
-                        output_ss << token_str;
-
-                        if (params.verbose_prompt) {
-                            LOG_INF("%6d -> '%s'\n", token, token_str.c_str());
+                        LOG_INF("%s: number of tokens in prompt = %zu\n", __func__, new_tokens);
+                        for (size_t i = original_size; i < embd_inp.size(); ++i) {
+                            LOG_INF("%6d -> '%s'\n", embd_inp[i], common_token_to_piece(ctx, embd_inp[i]).c_str());
                         }
                     }
 
                     // reset assistant message
                     assistant_ss.str("");
+                    inside_reasoning_block = false;
 
-                    n_remain -= line_inp.size();
+                    n_remain -= new_tokens;
                     LOG_DBG("n_remain: %d\n", n_remain);
                 }
 
