@@ -729,26 +729,24 @@ int main(int argc, char ** argv) {
                 std::string token_str = common_token_to_piece(ctx, id, false);
                 assistant_ss << token_str;
 
-                // If reasoning parsing is enabled, parse incrementally and display via diffs
-                // Otherwise, tokens will be displayed normally in the display section below
-                if (params.reasoning_format != COMMON_REASONING_FORMAT_NONE) {
-                    std::string accumulated = assistant_ss.str();
-                    common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
+                // Parse incrementally and display via diffs
+                // (reasoning_content_delta will be empty if reasoning_format is NONE)
+                std::string accumulated = assistant_ss.str();
+                common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
 
-                    // Compute what changed since last parse
-                    auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
-                    for (const auto & diff : diffs) {
-                        // Display reasoning content delta (extracted by parser)
-                        if (!diff.reasoning_content_delta.empty()) {
-                            LOG("%s", diff.reasoning_content_delta.c_str());
-                        }
-                        // Display regular content delta (extracted by parser)
-                        if (!diff.content_delta.empty()) {
-                            LOG("%s", diff.content_delta.c_str());
-                        }
+                // Compute what changed since last parse
+                auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
+                for (const auto & diff : diffs) {
+                    // Display reasoning content delta (extracted by parser, empty if no reasoning)
+                    if (!diff.reasoning_content_delta.empty()) {
+                        LOG("%s", diff.reasoning_content_delta.c_str());
                     }
-                    previous_parsed_msg = current_parsed;
+                    // Display regular content delta (extracted by parser)
+                    if (!diff.content_delta.empty()) {
+                        LOG("%s", diff.content_delta.c_str());
+                    }
                 }
+                previous_parsed_msg = current_parsed;
             }
 
             // echo this to console
@@ -781,9 +779,8 @@ int main(int argc, char ** argv) {
                 const std::string token_str = common_token_to_piece(ctx, id, params.special);
 
                 // Display tokens directly ONLY if we're not using diff-based display
-                // (When reasoning parsing is active in conversation mode, diffs handle display above)
-                bool using_diff_display = params.conversation_mode && !waiting_for_first_input &&
-                                         params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
+                // (In conversation mode with enable_chat_template, diffs handle display above)
+                bool using_diff_display = params.conversation_mode && params.enable_chat_template && !waiting_for_first_input;
                 if (!using_diff_display) {
                     LOG("%s", token_str.c_str());
                 }
@@ -870,22 +867,16 @@ int main(int argc, char ** argv) {
                         std::string full_response = assistant_ss.str();
                         common_chat_msg assistant_msg;
 
-                        if (params.reasoning_format != COMMON_REASONING_FORMAT_NONE) {
-                            // Parse with reasoning extraction
-                            assistant_msg = common_chat_parse(full_response, /* is_partial= */ false, reasoning_syntax);
+                        // Parse the complete response (handles both reasoning and non-reasoning)
+                        assistant_msg = common_chat_parse(full_response, /* is_partial= */ false, reasoning_syntax);
 
-                            // Display reasoning summary if present
-                            if (!assistant_msg.reasoning_content.empty()) {
-                                LOG("\n[Reasoning: %zu characters]\n", assistant_msg.reasoning_content.size());
-                            }
-
-                            // Reset for next response
-                            previous_parsed_msg = common_chat_msg();
-                        } else {
-                            // No reasoning parsing, just store the raw content
-                            assistant_msg.role = "assistant";
-                            assistant_msg.content = full_response;
+                        // Display reasoning summary if present
+                        if (!assistant_msg.reasoning_content.empty()) {
+                            LOG("\n[Reasoning: %zu characters]\n", assistant_msg.reasoning_content.size());
                         }
+
+                        // Reset for next response
+                        previous_parsed_msg = common_chat_msg();
 
                         // Add the complete parsed message to chat history
                         chat_msgs.push_back(assistant_msg);
