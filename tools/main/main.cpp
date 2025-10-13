@@ -544,7 +544,6 @@ int main(int argc, char ** argv) {
     reasoning_syntax.parse_tool_calls = false;
 
     common_chat_msg previous_parsed_msg;
-    bool inside_reasoning_block = false;
 
     // the first thing we will do is to output the prompt, so set color accordingly
     console::set_display(console::prompt);
@@ -725,24 +724,27 @@ int main(int argc, char ** argv) {
 
             embd.push_back(id);
 
+            // In conversation mode, accumulate and parse assistant response
             if (params.conversation_mode && !waiting_for_first_input && !llama_vocab_is_eog(vocab, id)) {
                 std::string token_str = common_token_to_piece(ctx, id, false);
                 assistant_ss << token_str;
 
-                // Parse incrementally to detect reasoning content
+                // If reasoning parsing is enabled, parse incrementally and display via diffs
+                // Otherwise, tokens will be displayed normally in the display section below
                 if (params.reasoning_format != COMMON_REASONING_FORMAT_NONE) {
                     std::string accumulated = assistant_ss.str();
                     common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
 
-                    // Track if we're inside a reasoning block
-                    inside_reasoning_block = !current_parsed.reasoning_content.empty();
-
                     // Compute what changed since last parse
                     auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
                     for (const auto & diff : diffs) {
-                        // Display reasoning content changes
+                        // Display reasoning content delta (extracted by parser)
                         if (!diff.reasoning_content_delta.empty()) {
-                            LOG("<thinking>%s", diff.reasoning_content_delta.c_str());
+                            LOG("%s", diff.reasoning_content_delta.c_str());
+                        }
+                        // Display regular content delta (extracted by parser)
+                        if (!diff.content_delta.empty()) {
+                            LOG("%s", diff.content_delta.c_str());
                         }
                     }
                     previous_parsed_msg = current_parsed;
@@ -778,8 +780,11 @@ int main(int argc, char ** argv) {
             for (auto id : embd) {
                 const std::string token_str = common_token_to_piece(ctx, id, params.special);
 
-                // Console/Stream Output - suppress if inside reasoning block
-                if (!inside_reasoning_block) {
+                // Display tokens directly ONLY if we're not using diff-based display
+                // (When reasoning parsing is active in conversation mode, diffs handle display above)
+                bool using_diff_display = params.conversation_mode && !waiting_for_first_input &&
+                                         params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
+                if (!using_diff_display) {
                     LOG("%s", token_str.c_str());
                 }
 
@@ -876,7 +881,6 @@ int main(int argc, char ** argv) {
 
                             // Reset for next response
                             previous_parsed_msg = common_chat_msg();
-                            inside_reasoning_block = false;
                         } else {
                             // No reasoning parsing, just store the raw content
                             assistant_msg.role = "assistant";
@@ -1005,7 +1009,6 @@ int main(int argc, char ** argv) {
 
                     // reset assistant message
                     assistant_ss.str("");
-                    inside_reasoning_block = false;
 
                     n_remain -= new_tokens;
                     LOG_DBG("n_remain: %d\n", n_remain);
