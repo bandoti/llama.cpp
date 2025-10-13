@@ -724,29 +724,10 @@ int main(int argc, char ** argv) {
 
             embd.push_back(id);
 
-            // In conversation mode, accumulate and parse assistant response
+            // In conversation mode, accumulate assistant response for parsing
             if (params.conversation_mode && !waiting_for_first_input && !llama_vocab_is_eog(vocab, id)) {
                 std::string token_str = common_token_to_piece(ctx, id, false);
                 assistant_ss << token_str;
-
-                // Parse incrementally and display via diffs
-                // (reasoning_content_delta will be empty if reasoning_format is NONE)
-                std::string accumulated = assistant_ss.str();
-                common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
-
-                // Compute what changed since last parse
-                auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
-                for (const auto & diff : diffs) {
-                    // Display reasoning content delta (extracted by parser, empty if no reasoning)
-                    if (!diff.reasoning_content_delta.empty()) {
-                        LOG("%s", diff.reasoning_content_delta.c_str());
-                    }
-                    // Display regular content delta (extracted by parser)
-                    if (!diff.content_delta.empty()) {
-                        LOG("%s", diff.content_delta.c_str());
-                    }
-                }
-                previous_parsed_msg = current_parsed;
             }
 
             // echo this to console
@@ -775,13 +756,36 @@ int main(int argc, char ** argv) {
 
         // display text
         if (input_echo && display) {
+            // Check if we should use diff-based display for this batch
+            bool use_diff_display = params.conversation_mode && params.enable_chat_template &&
+                                   !waiting_for_first_input && !assistant_ss.str().empty();
+
+            if (use_diff_display) {
+                // Parse incrementally and display via diffs
+                // (reasoning_content_delta will be empty if reasoning_format is NONE)
+                std::string accumulated = assistant_ss.str();
+                common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
+
+                // Compute what changed since last parse
+                auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
+                for (const auto & diff : diffs) {
+                    // Display reasoning content delta (extracted by parser, empty if no reasoning)
+                    if (!diff.reasoning_content_delta.empty()) {
+                        LOG("%s", diff.reasoning_content_delta.c_str());
+                    }
+                    // Display regular content delta (extracted by parser)
+                    if (!diff.content_delta.empty()) {
+                        LOG("%s", diff.content_delta.c_str());
+                    }
+                }
+                previous_parsed_msg = current_parsed;
+            }
+
             for (auto id : embd) {
                 const std::string token_str = common_token_to_piece(ctx, id, params.special);
 
-                // Display tokens directly ONLY if we're not using diff-based display
-                // (In conversation mode with enable_chat_template, diffs handle display above)
-                bool using_diff_display = params.conversation_mode && params.enable_chat_template && !waiting_for_first_input;
-                if (!using_diff_display) {
+                // Display tokens directly if NOT using diff-based display
+                if (!use_diff_display) {
                     LOG("%s", token_str.c_str());
                 }
 
