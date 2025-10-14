@@ -12,7 +12,6 @@ class ConversationDisplay {
 private:
     MessageType current_message_type;
     bool in_message;
-    size_t reasoning_char_count;
     bool reasoning_active;
     DisplayRenderer * renderer;
 
@@ -39,14 +38,4 @@ public:
 
     // Check if currently in a message
     bool is_in_message() const;
-
-private:
-    // Internal helper to display reasoning content
-    void display_reasoning_content(const std::string & content);
-
-    // Internal helper to display regular content
-    void display_regular_content(const std::string & content);
-
-    // Internal helper to display reasoning summary
-    void display_reasoning_summary();
 };
