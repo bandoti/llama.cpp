@@ -38,8 +38,18 @@ bool ConsoleManager::readline(std::string & line, bool multiline_input) {
     return console::readline(line, multiline_input);
 }
 
-void ConsoleManager::set_display_mode(console::display_t mode) {
-    console::set_display(mode);
+void ConsoleManager::read_user_input(std::string & buffer, bool multiline_input) {
+    buffer.clear();
+    std::string line;
+    bool another_line = true;
+    do {
+        another_line = console::readline(line, multiline_input);
+        buffer += line;
+    } while (another_line);
+}
+
+void ConsoleManager::set_error_display() {
+    console::set_display(console::error);
 }
 
 void ConsoleManager::reset_display() {

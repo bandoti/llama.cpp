@@ -1,6 +1,5 @@
 #include "arg.h"
 #include "common.h"
-#include "console.h"
 #include "log.h"
 #include "sampling.h"
 #include "llama.h"
@@ -529,7 +528,7 @@ int main(int argc, char ** argv) {
                 const int skipped_tokens = (int) embd.size() - max_embd_size;
                 embd.resize(max_embd_size);
 
-                console_manager.set_display_mode(console::error);
+                console_manager.set_error_display();
                 LOG_WRN("<<input too long: skipped %d token%s>>", skipped_tokens, skipped_tokens != 1 ? "s" : "");
                 console_manager.reset_display();
             }
@@ -869,12 +868,7 @@ int main(int argc, char ** argv) {
 
                 display = params.display_prompt;
 
-                std::string line;
-                bool another_line = true;
-                do {
-                    another_line = console_manager.readline(line, params.multiline_input);
-                    buffer += line;
-                } while (another_line);
+                console_manager.read_user_input(buffer, params.multiline_input);
 
                 display = true;
 

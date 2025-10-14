@@ -28,8 +28,11 @@ public:
     // Read a line of input from the user
     bool readline(std::string & line, bool multiline_input);
 
-    // Set display mode through the renderer system
-    void set_display_mode(console::display_t mode);
+    // Read user input into a buffer (handles multiline input loop)
+    void read_user_input(std::string & buffer, bool multiline_input);
+
+    // Set display mode for error messages
+    void set_error_display();
 
     // Reset to clean state (useful before starting message display)
     void reset_display();
