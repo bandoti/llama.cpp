@@ -11,7 +11,7 @@ void ConsoleDisplayRenderer::render_begin(MessageType type) {
     // Set console colors based on message type
     switch (type) {
         case MESSAGE_TYPE_SYSTEM:
-            console::set_display(console::prompt);
+            console::set_display(console::system);
             break;
         case MESSAGE_TYPE_PROMPT:
             console::set_display(console::prompt);

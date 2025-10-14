@@ -147,6 +147,9 @@ namespace console {
                 case reset:
                     fprintf(out, ANSI_COLOR_RESET);
                     break;
+                case system:
+                    fprintf(out, ANSI_COLOR_BLUE);
+                    break;
                 case prompt:
                     fprintf(out, ANSI_COLOR_YELLOW);
                     break;
@@ -495,10 +498,17 @@ namespace console {
     bool readline(std::string & line, bool multiline_input) {
         set_display(user_input);
 
+        bool result;
         if (simple_io) {
-            return readline_simple(line, multiline_input);
+            result = readline_simple(line, multiline_input);
+        } else {
+            result = readline_advanced(line, multiline_input);
         }
-        return readline_advanced(line, multiline_input);
+
+        // Reset color after readline completes
+        set_display(reset);
+
+        return result;
     }
 
 }

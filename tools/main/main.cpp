@@ -8,6 +8,7 @@
 #include "conversation.h"
 #include "display.h"
 #include "console_display_renderer.h"
+#include "console_manager.h"
 
 #include <cstdio>
 #include <cstring>
@@ -34,13 +35,6 @@
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
 
-static llama_context           ** g_ctx;
-static llama_model             ** g_model;
-static common_sampler          ** g_smpl;
-static common_params            * g_params;
-static std::vector<llama_token> * g_input_tokens;
-static std::ostringstream       * g_output_ss;
-static std::vector<llama_token> * g_output_tokens;
 static bool is_interacting  = false;
 static bool need_insert_eot = false;
 
@@ -65,30 +59,9 @@ static bool file_is_empty(const std::string & path) {
     return f.tellg() == 0;
 }
 
-#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__)) || defined (_WIN32)
-static void sigint_handler(int signo) {
-    if (signo == SIGINT) {
-        if (!is_interacting && g_params->interactive) {
-            is_interacting  = true;
-            need_insert_eot = true;
-        } else {
-            console::cleanup();
-            LOG("\n");
-            common_perf_print(*g_ctx, *g_smpl);
-
-            // make sure all logs are flushed
-            LOG("Interrupted by user\n");
-            common_log_pause(common_log_main());
-
-            _exit(130);
-        }
-    }
-}
-#endif
 
 int main(int argc, char ** argv) {
     common_params params;
-    g_params = &params;
     if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_MAIN, print_usage)) {
         return 1;
     }
@@ -97,10 +70,10 @@ int main(int argc, char ** argv) {
 
     auto & sparams = params.sampling;
 
-    // save choice to use color for later
-    // (note for later: this is a slightly awkward choice)
-    console::init(params.simple_io, params.use_color);
-    atexit([]() { console::cleanup(); });
+    // Initialize console manager
+    ConsoleManager & console_manager = ConsoleManager::instance();
+    console_manager.init(params.simple_io, params.use_color);
+    atexit([]() { ConsoleManager::instance().cleanup(); });
 
     if (params.embedding) {
         LOG_ERR("************\n");
@@ -131,10 +104,6 @@ int main(int argc, char ** argv) {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     common_sampler * smpl = nullptr;
-
-    g_model = &model;
-    g_ctx = &ctx;
-    g_smpl = &smpl;
 
     // load the model and apply lora adapter, if any
     LOG_INF("%s: load the model and apply lora adapter, if any\n", __func__);
@@ -406,21 +375,9 @@ int main(int argc, char ** argv) {
         LOG_INF("\n");
     }
 
-    // ctrl+C handling
-    {
-#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
-        struct sigaction sigint_action;
-        sigint_action.sa_handler = sigint_handler;
-        sigemptyset (&sigint_action.sa_mask);
-        sigint_action.sa_flags = 0;
-        sigaction(SIGINT, &sigint_action, NULL);
-#elif defined (_WIN32)
-        auto console_ctrl_handler = +[](DWORD ctrl_type) -> BOOL {
-            return (ctrl_type == CTRL_C_EVENT) ? (sigint_handler(SIGINT), true) : false;
-        };
-        SetConsoleCtrlHandler(reinterpret_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
-#endif
-    }
+    // Setup ConsoleManager with cleanup context and signal handlers
+    console_manager.set_cleanup_context(&ctx, &smpl, &params, &is_interacting, &need_insert_eot);
+    console_manager.setup_signal_handlers();
 
     if (params.interactive) {
         LOG_INF("%s: interactive mode on.\n", __func__);
@@ -524,12 +481,10 @@ int main(int argc, char ** argv) {
     int n_consumed         = 0;
     int n_session_consumed = 0;
 
-    std::vector<int>   input_tokens;  g_input_tokens  = &input_tokens;
-    std::vector<int>   output_tokens; g_output_tokens = &output_tokens;
-    std::ostringstream output_ss;     g_output_ss     = &output_ss;
+    std::vector<int>   input_tokens;
+    std::vector<int>   output_tokens;
+    std::ostringstream output_ss;
 
-    // the first thing we will do is to output the prompt, so set color accordingly
-    console::set_display(console::prompt);
     display = params.display_prompt;
 
     std::vector<llama_token> embd;
@@ -574,9 +529,9 @@ int main(int argc, char ** argv) {
                 const int skipped_tokens = (int) embd.size() - max_embd_size;
                 embd.resize(max_embd_size);
 
-                console::set_display(console::error);
+                console_manager.set_display_mode(console::error);
                 LOG_WRN("<<input too long: skipped %d token%s>>", skipped_tokens, skipped_tokens != 1 ? "s" : "");
-                console::set_display(console::reset);
+                console_manager.reset_display();
             }
 
             if (ga_n == 1) {
@@ -751,6 +706,11 @@ int main(int argc, char ** argv) {
                 }
             }
 
+            // Ensure console is in a clean state before displaying tokens
+            if (params.conversation_mode && params.enable_chat_template && !waiting_for_first_input) {
+                console_manager.reset_display();
+            }
+
             for (auto id : embd) {
                 // Handle message boundaries for initial prompt in conversation mode
                 if (params.conversation_mode && params.enable_chat_template && !waiting_for_first_input) {
@@ -802,7 +762,6 @@ int main(int argc, char ** argv) {
 
         // reset color to default if there is no pending user input
         if (input_echo && (int) embd_inp.size() == n_consumed) {
-            console::set_display(console::reset);
             display = true;
         }
 
@@ -908,19 +867,15 @@ int main(int argc, char ** argv) {
                     LOG("%s", params.input_prefix.c_str());
                 }
 
-                // color user input only
-                console::set_display(console::user_input);
                 display = params.display_prompt;
 
                 std::string line;
                 bool another_line = true;
                 do {
-                    another_line = console::readline(line, params.multiline_input);
+                    another_line = console_manager.readline(line, params.multiline_input);
                     buffer += line;
                 } while (another_line);
 
-                // done taking input, reset color
-                console::set_display(console::reset);
                 display = true;
 
                 if (buffer.empty()) { // Ctrl+D on empty line exits
