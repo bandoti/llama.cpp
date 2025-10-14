@@ -1,38 +1,23 @@
 // Display management for llama-cli
-// Separates display concerns from processing logic
+// Separates display concerns from processing logic using the Bridge pattern
 
 #pragma once
 
 #include "chat.h"
-#include "console.h"
+#include "display_renderer.h"
 #include <string>
 
-// Message types for display categorization
-enum MessageType {
-    MESSAGE_TYPE_SYSTEM,
-    MESSAGE_TYPE_USER,
-    MESSAGE_TYPE_ASSISTANT,
-    MESSAGE_TYPE_REASONING,
-    MESSAGE_TYPE_TOOL_CALL,
-};
-
-// Display lifecycle events
-enum DisplayEvent {
-    DISPLAY_EVENT_BEGIN,    // Message starts
-    DISPLAY_EVENT_CONTENT,  // Streaming content
-    DISPLAY_EVENT_END,      // Message ends
-};
-
-// Manages display of conversation messages with proper formatting and lifecycle
+// Abstraction: manages display logic and delegates rendering to the implementation
 class ConversationDisplay {
 private:
     MessageType current_message_type;
     bool in_message;
     size_t reasoning_char_count;
     bool reasoning_active;
+    DisplayRenderer * renderer;
 
 public:
-    ConversationDisplay();
+    explicit ConversationDisplay(DisplayRenderer * renderer);
 
     // Signal the beginning of a message
     void begin_message(MessageType type);

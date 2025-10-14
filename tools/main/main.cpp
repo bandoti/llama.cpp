@@ -7,6 +7,7 @@
 #include "chat.h"
 #include "conversation.h"
 #include "display.h"
+#include "console_display_renderer.h"
 
 #include <cstdio>
 #include <cstring>
@@ -266,10 +267,11 @@ int main(int argc, char ** argv) {
 
     bool waiting_for_first_input = false;
 
-    // Initialize conversation manager, assistant parser, and display manager
+    // Initialize conversation manager, assistant parser, renderer, and display manager
     ConversationManager conversation(chat_templates.get(), &params);
     AssistantResponseParser assistant_parser(params.reasoning_format);
-    ConversationDisplay display_manager;
+    ConsoleDisplayRenderer console_renderer;
+    ConversationDisplay display_manager(&console_renderer);
 
     std::string prompt;
     {
