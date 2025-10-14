@@ -5,6 +5,7 @@
 #include "sampling.h"
 #include "llama.h"
 #include "chat.h"
+#include "conversation.h"
 
 #include <cstdio>
 #include <cstring>
@@ -132,8 +133,6 @@ int main(int argc, char ** argv) {
     g_model = &model;
     g_ctx = &ctx;
     g_smpl = &smpl;
-
-    std::vector<common_chat_msg> chat_msgs;
 
     // load the model and apply lora adapter, if any
     LOG_INF("%s: load the model and apply lora adapter, if any\n", __func__);
@@ -265,59 +264,41 @@ int main(int argc, char ** argv) {
     std::vector<llama_token> embd_inp;
 
     bool waiting_for_first_input = false;
-    common_chat_format detected_chat_format = COMMON_CHAT_FORMAT_CONTENT_ONLY;
 
-    // Helper to apply full chat template and get formatted prompt
-    auto apply_chat_template = [&]() -> std::string {
-        common_chat_templates_inputs inputs;
-        inputs.use_jinja = g_params->use_jinja;
-        inputs.messages = chat_msgs;
-        inputs.add_generation_prompt = !chat_msgs.empty() && chat_msgs.back().role == "user";
-        inputs.reasoning_format = g_params->reasoning_format;
-        bool enable_thinking = g_params->use_jinja && g_params->reasoning_budget != 0 &&
-                             common_chat_templates_support_enable_thinking(chat_templates.get());
-        inputs.enable_thinking = enable_thinking;
-
-        auto chat_params = common_chat_templates_apply(chat_templates.get(), inputs);
-        detected_chat_format = chat_params.format;
-
-        LOG_DBG("Applied chat template, format: %s\n", common_chat_format_name(detected_chat_format));
-        return chat_params.prompt;
-    };
+    // Initialize conversation manager and assistant parser
+    ConversationManager conversation(chat_templates.get(), &params);
+    AssistantResponseParser assistant_parser(params.reasoning_format);
 
     std::string prompt;
     {
         if (params.conversation_mode && params.enable_chat_template) {
+            // Add initial messages to conversation
             if (!params.system_prompt.empty()) {
-                common_chat_msg system_msg;
-                system_msg.role = "system";
-                system_msg.content = params.system_prompt;
-                chat_msgs.push_back(system_msg);
+                conversation.add_system_message(params.system_prompt);
             }
 
             if (!params.prompt.empty()) {
-                common_chat_msg user_msg;
-                user_msg.role = "user";
-                user_msg.content = params.prompt;
-                chat_msgs.push_back(user_msg);
+                conversation.add_user_message(params.prompt);
             } else {
                 waiting_for_first_input = true;
             }
 
+            // Get incremental tokens from conversation manager
             if (!params.system_prompt.empty() || !params.prompt.empty()) {
-                prompt = apply_chat_template();
+                embd_inp = conversation.get_incremental_tokens(ctx);
+                assistant_parser.set_format(conversation.get_format());
             }
         } else {
             // otherwise use the prompt as is
             prompt = params.prompt;
-        }
 
-        if (params.interactive_first || !prompt.empty() || session_tokens.empty()) {
-            LOG_DBG("tokenize the prompt\n");
-            embd_inp = common_tokenize(ctx, prompt, true, true);
-        } else {
-            LOG_DBG("use session tokens\n");
-            embd_inp = session_tokens;
+            if (params.interactive_first || !prompt.empty() || session_tokens.empty()) {
+                LOG_DBG("tokenize the prompt\n");
+                embd_inp = common_tokenize(ctx, prompt, true, true);
+            } else {
+                LOG_DBG("use session tokens\n");
+                embd_inp = session_tokens;
+            }
         }
 
         LOG_DBG("prompt: \"%s\"\n", prompt.c_str());
@@ -535,15 +516,6 @@ int main(int argc, char ** argv) {
     std::vector<int>   input_tokens;  g_input_tokens  = &input_tokens;
     std::vector<int>   output_tokens; g_output_tokens = &output_tokens;
     std::ostringstream output_ss;     g_output_ss     = &output_ss;
-    std::ostringstream assistant_ss; // for storing current assistant message, used in conversation mode
-
-    // Setup reasoning syntax for output parsing
-    common_chat_syntax reasoning_syntax;
-    reasoning_syntax.format = detected_chat_format; // Use the detected chat format
-    reasoning_syntax.reasoning_format = params.reasoning_format;
-    reasoning_syntax.parse_tool_calls = false;
-
-    common_chat_msg previous_parsed_msg;
 
     // the first thing we will do is to output the prompt, so set color accordingly
     console::set_display(console::prompt);
@@ -725,9 +697,9 @@ int main(int argc, char ** argv) {
             embd.push_back(id);
 
             // In conversation mode, accumulate assistant response for parsing
-            if (params.conversation_mode && !waiting_for_first_input && !llama_vocab_is_eog(vocab, id)) {
+            if (params.conversation_mode && params.enable_chat_template && !waiting_for_first_input && !llama_vocab_is_eog(vocab, id)) {
                 std::string token_str = common_token_to_piece(ctx, id, false);
-                assistant_ss << token_str;
+                assistant_parser.accumulate_token(token_str);
             }
 
             // echo this to console
@@ -758,16 +730,12 @@ int main(int argc, char ** argv) {
         if (input_echo && display) {
             // Check if we should use diff-based display for this batch
             bool use_diff_display = params.conversation_mode && params.enable_chat_template &&
-                                   !waiting_for_first_input && !assistant_ss.str().empty();
+                                   !waiting_for_first_input && assistant_parser.has_content();
 
             if (use_diff_display) {
                 // Parse incrementally and display via diffs
                 // (reasoning_content_delta will be empty if reasoning_format is NONE)
-                std::string accumulated = assistant_ss.str();
-                common_chat_msg current_parsed = common_chat_parse(accumulated, /* is_partial= */ true, reasoning_syntax);
-
-                // Compute what changed since last parse
-                auto diffs = common_chat_msg_diff::compute_diffs(previous_parsed_msg, current_parsed);
+                auto diffs = assistant_parser.get_display_diffs();
                 for (const auto & diff : diffs) {
                     // Display reasoning content delta (extracted by parser, empty if no reasoning)
                     if (!diff.reasoning_content_delta.empty()) {
@@ -778,7 +746,6 @@ int main(int argc, char ** argv) {
                         LOG("%s", diff.content_delta.c_str());
                     }
                 }
-                previous_parsed_msg = current_parsed;
             }
 
             for (auto id : embd) {
@@ -867,23 +834,19 @@ int main(int argc, char ** argv) {
                     }
 
                     if (params.enable_chat_template) {
-                        // Parse the complete assistant response
-                        std::string full_response = assistant_ss.str();
-                        common_chat_msg assistant_msg;
-
-                        // Parse the complete response (handles both reasoning and non-reasoning)
-                        assistant_msg = common_chat_parse(full_response, /* is_partial= */ false, reasoning_syntax);
+                        // Finalize the assistant response
+                        common_chat_msg assistant_msg = assistant_parser.finalize();
 
                         // Display reasoning summary if present
                         if (!assistant_msg.reasoning_content.empty()) {
                             LOG("\n[Reasoning: %zu characters]\n", assistant_msg.reasoning_content.size());
                         }
 
-                        // Reset for next response
-                        previous_parsed_msg = common_chat_msg();
+                        // Add the complete parsed message to conversation history
+                        conversation.add_message(assistant_msg);
 
-                        // Add the complete parsed message to chat history
-                        chat_msgs.push_back(assistant_msg);
+                        // Reset parser for next response
+                        assistant_parser.reset();
                     }
                     is_interacting = true;
                     LOG("\n");
@@ -962,25 +925,13 @@ int main(int argc, char ** argv) {
 
                     bool format_chat = params.conversation_mode && params.enable_chat_template;
 
-                    // Get the current prompt state for comparison
-                    size_t prev_prompt_tokens = embd_inp.size();
-
                     if (format_chat) {
-                        // Add user message to chat history
-                        common_chat_msg user_msg;
-                        user_msg.role = "user";
-                        user_msg.content = buffer;
-                        chat_msgs.push_back(user_msg);
+                        // Add user message to conversation history
+                        conversation.add_user_message(buffer);
 
-                        // Apply full chat template to get complete formatted prompt
-                        std::string full_prompt = apply_chat_template();
-
-                        // Tokenize the full prompt
-                        auto full_tokens = common_tokenize(ctx, full_prompt, false, true);
-
-                        // Find the incremental tokens (new tokens beyond prev_prompt_tokens)
-                        // The KV cache will handle skipping the unchanged prefix automatically
-                        embd_inp = full_tokens;
+                        // Get incremental tokens (only new tokens, not entire history)
+                        auto incremental_tokens = conversation.get_incremental_tokens(ctx);
+                        embd_inp.insert(embd_inp.end(), incremental_tokens.begin(), incremental_tokens.end());
                     } else {
                         // No chat formatting, just use raw input
                         const auto line_pfx = common_tokenize(ctx, params.input_prefix, false, true);
@@ -1001,9 +952,6 @@ int main(int argc, char ** argv) {
                             LOG_INF("%6d -> '%s'\n", embd_inp[i], common_token_to_piece(ctx, embd_inp[i]).c_str());
                         }
                     }
-
-                    // reset assistant message
-                    assistant_ss.str("");
 
                     n_remain -= new_tokens;
                     LOG_DBG("n_remain: %d\n", n_remain);
