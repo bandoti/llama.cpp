@@ -13,13 +13,16 @@ void ConsoleDisplayRenderer::render_begin(MessageType type) {
         case MESSAGE_TYPE_SYSTEM:
             console::set_display(console::prompt);
             break;
+        case MESSAGE_TYPE_PROMPT:
+            console::set_display(console::prompt);
+            break;
         case MESSAGE_TYPE_USER:
             console::set_display(console::user_input);
             break;
         case MESSAGE_TYPE_ASSISTANT:
             console::set_display(console::reset);
             break;
-        case MESSAGE_TYPE_REASONING:
+        case MESSAGE_TYPE_ASSISTANT_REASONING:
             // Reasoning is handled inline during assistant messages
             break;
         case MESSAGE_TYPE_TOOL_CALL:

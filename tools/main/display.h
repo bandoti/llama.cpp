@@ -34,6 +34,12 @@ public:
     // Reset state for new conversation turn
     void reset();
 
+    // Get the current message type
+    MessageType get_current_message_type() const;
+
+    // Check if currently in a message
+    bool is_in_message() const;
+
 private:
     // Internal helper to display reasoning content
     void display_reasoning_content(const std::string & content);

@@ -273,24 +273,30 @@ int main(int argc, char ** argv) {
     ConsoleDisplayRenderer console_renderer;
     ConversationDisplay display_manager(&console_renderer);
 
+    // Track token boundaries for initial messages
+    size_t system_token_count = 0;
+    size_t prompt_token_count = 0;
+
     std::string prompt;
     {
         if (params.conversation_mode && params.enable_chat_template) {
-            // Add initial messages to conversation
+            // Add initial messages to conversation and track token boundaries
             if (!params.system_prompt.empty()) {
                 conversation.add_system_message(params.system_prompt);
+                auto tokens_after_system = conversation.get_incremental_tokens(ctx);
+                system_token_count = tokens_after_system.size();
+                embd_inp = tokens_after_system;
+                assistant_parser.set_format(conversation.get_format());
             }
 
             if (!params.prompt.empty()) {
                 conversation.add_user_message(params.prompt);
+                auto tokens_with_prompt = conversation.get_incremental_tokens(ctx);
+                prompt_token_count = tokens_with_prompt.size() - system_token_count;
+                embd_inp = tokens_with_prompt;
+                assistant_parser.set_format(conversation.get_format());
             } else {
                 waiting_for_first_input = true;
-            }
-
-            // Get incremental tokens from conversation manager
-            if (!params.system_prompt.empty() || !params.prompt.empty()) {
-                embd_inp = conversation.get_incremental_tokens(ctx);
-                assistant_parser.set_format(conversation.get_format());
             }
         } else {
             // otherwise use the prompt as is
@@ -746,6 +752,34 @@ int main(int argc, char ** argv) {
             }
 
             for (auto id : embd) {
+                // Handle message boundaries for initial prompt in conversation mode
+                if (params.conversation_mode && params.enable_chat_template && !waiting_for_first_input) {
+                    // Begin system message at the start
+                    if (!display_manager.is_in_message() && system_token_count > 0) {
+                        display_manager.begin_message(MESSAGE_TYPE_SYSTEM);
+                    }
+
+                    // Decrement system token count
+                    if (system_token_count > 0) {
+                        system_token_count--;
+                        // When system tokens are done, transition to prompt
+                        if (system_token_count == 0) {
+                            display_manager.end_message();
+                            if (prompt_token_count > 0) {
+                                display_manager.begin_message(MESSAGE_TYPE_PROMPT);
+                            }
+                        }
+                    }
+                    // Decrement prompt token count
+                    else if (prompt_token_count > 0) {
+                        prompt_token_count--;
+                        // When prompt tokens are done, end the message
+                        if (prompt_token_count == 0) {
+                            display_manager.end_message();
+                        }
+                    }
+                }
+
                 const std::string token_str = common_token_to_piece(ctx, id, params.special);
 
                 // Display tokens directly when not using diff-based parsing

@@ -65,9 +65,17 @@ void ConversationDisplay::reset() {
     reasoning_active = false;
 }
 
+MessageType ConversationDisplay::get_current_message_type() const {
+    return current_message_type;
+}
+
+bool ConversationDisplay::is_in_message() const {
+    return in_message;
+}
+
 void ConversationDisplay::display_reasoning_content(const std::string & content) {
     reasoning_char_count += content.length();
-    renderer->render_content(MESSAGE_TYPE_REASONING, content);
+    renderer->render_content(MESSAGE_TYPE_ASSISTANT_REASONING, content);
 }
 
 void ConversationDisplay::display_regular_content(const std::string & content) {
@@ -77,7 +85,7 @@ void ConversationDisplay::display_regular_content(const std::string & content) {
 void ConversationDisplay::display_reasoning_summary() {
     if (reasoning_char_count > 0) {
         // Pass summary as content with reasoning type and char count in the message
-        renderer->render_content(MESSAGE_TYPE_REASONING, "\n[Reasoning: " + std::to_string(reasoning_char_count) + " characters]\n");
+        renderer->render_content(MESSAGE_TYPE_ASSISTANT_REASONING, "\n[Reasoning: " + std::to_string(reasoning_char_count) + " characters]\n");
         reasoning_char_count = 0;
     }
 }

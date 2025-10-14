@@ -8,9 +8,10 @@
 // Message types for display categorization
 enum MessageType {
     MESSAGE_TYPE_SYSTEM,
+    MESSAGE_TYPE_PROMPT,
     MESSAGE_TYPE_USER,
     MESSAGE_TYPE_ASSISTANT,
-    MESSAGE_TYPE_REASONING,
+    MESSAGE_TYPE_ASSISTANT_REASONING,
     MESSAGE_TYPE_TOOL_CALL,
 };
 
