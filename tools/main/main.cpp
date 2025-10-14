@@ -6,6 +6,7 @@
 #include "llama.h"
 #include "chat.h"
 #include "conversation.h"
+#include "display.h"
 
 #include <cstdio>
 #include <cstring>
@@ -265,9 +266,10 @@ int main(int argc, char ** argv) {
 
     bool waiting_for_first_input = false;
 
-    // Initialize conversation manager and assistant parser
+    // Initialize conversation manager, assistant parser, and display manager
     ConversationManager conversation(chat_templates.get(), &params);
     AssistantResponseParser assistant_parser(params.reasoning_format);
+    ConversationDisplay display_manager;
 
     std::string prompt;
     {
@@ -500,7 +502,8 @@ int main(int argc, char ** argv) {
         }
         LOG_INF("\n");
 
-        is_interacting = params.interactive_first;
+        // Only start in interactive mode if we're waiting for first input
+        is_interacting = params.interactive_first && waiting_for_first_input;
     }
 
     bool is_antiprompt        = false;
@@ -728,32 +731,24 @@ int main(int argc, char ** argv) {
 
         // display text
         if (input_echo && display) {
-            // Check if we should use diff-based display for this batch
+            // Check if we should use diff-based display for assistant output
             bool use_diff_display = params.conversation_mode && params.enable_chat_template &&
                                    !waiting_for_first_input && assistant_parser.has_content();
 
             if (use_diff_display) {
-                // Parse incrementally and display via diffs
-                // (reasoning_content_delta will be empty if reasoning_format is NONE)
+                // Parse incrementally and display via diffs using display manager
                 auto diffs = assistant_parser.get_display_diffs();
                 for (const auto & diff : diffs) {
-                    // Display reasoning content delta (extracted by parser, empty if no reasoning)
-                    if (!diff.reasoning_content_delta.empty()) {
-                        LOG("%s", diff.reasoning_content_delta.c_str());
-                    }
-                    // Display regular content delta (extracted by parser)
-                    if (!diff.content_delta.empty()) {
-                        LOG("%s", diff.content_delta.c_str());
-                    }
+                    display_manager.display_diff(diff);
                 }
             }
 
             for (auto id : embd) {
                 const std::string token_str = common_token_to_piece(ctx, id, params.special);
 
-                // Display tokens directly if NOT using diff-based display
+                // Display tokens directly when not using diff-based parsing
                 if (!use_diff_display) {
-                    LOG("%s", token_str.c_str());
+                    display_manager.display_token(token_str);
                 }
 
                 // Record Displayed Tokens To Log
@@ -834,19 +829,18 @@ int main(int argc, char ** argv) {
                     }
 
                     if (params.enable_chat_template) {
+                        // End the message display (will show reasoning summary if needed)
+                        display_manager.end_message();
+
                         // Finalize the assistant response
                         common_chat_msg assistant_msg = assistant_parser.finalize();
-
-                        // Display reasoning summary if present
-                        if (!assistant_msg.reasoning_content.empty()) {
-                            LOG("\n[Reasoning: %zu characters]\n", assistant_msg.reasoning_content.size());
-                        }
 
                         // Add the complete parsed message to conversation history
                         conversation.add_message(assistant_msg);
 
-                        // Reset parser for next response
+                        // Reset parser and display for next response
                         assistant_parser.reset();
+                        display_manager.reset();
                     }
                     is_interacting = true;
                     LOG("\n");
